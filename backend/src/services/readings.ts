@@ -9,6 +9,8 @@ interface NewReading {
   type: VitalType;
   value: number;
   source: Reading["source"];
+  /** When the sample was measured (from the device); defaults to now. */
+  recordedAt?: string;
 }
 
 const lastStatus = new Map<string, Status>(); // `${seniorId}:${type}`
@@ -25,7 +27,7 @@ export function recordReading(input: NewReading): Reading {
     unit: spec.unit,
     status: evaluate(input.type, value),
     source: input.source,
-    recordedAt: new Date().toISOString(),
+    recordedAt: input.recordedAt ?? new Date().toISOString(),
   };
 
   store.addReading(reading);

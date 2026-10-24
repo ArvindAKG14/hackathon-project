@@ -3,18 +3,21 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { config } from "./config.js";
 import { requireUser } from "./middleware/auth.js";
 import { dashboardRouter } from "./routes/dashboard.js";
+import { deviceManagementRouter, deviceRouter } from "./routes/devices.js";
 
 export function createApp() {
   const app = express();
 
   app.use(cors({ origin: config.frontendUrl }));
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb" })); // phone syncs can carry up to 1000 samples
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });
 
-  app.use("/api", requireUser, dashboardRouter);
+  // Phones authenticate with device tokens, so this goes before user auth.
+  app.use("/api/devices", deviceRouter);
+  app.use("/api", requireUser, dashboardRouter, deviceManagementRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });

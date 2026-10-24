@@ -29,7 +29,7 @@ export interface Reading {
   value: number;
   unit: string;
   status: Status;
-  source: "simulator" | "manual";
+  source: "simulator" | "manual" | "healthkit" | "health_connect";
   recordedAt: string;
 }
 

@@ -1,7 +1,7 @@
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import * as store from "../data/store.js";
 import { bus } from "../events.js";
-import { currentUserId } from "../middleware/auth.js";
+import { currentUserId, requireSenior } from "../middleware/auth.js";
 import { recordReading } from "../services/readings.js";
 import { isVitalType, worst } from "../services/thresholds.js";
 import type { Alert, Reading, Senior } from "../types.js";
@@ -16,14 +16,6 @@ function summary(senior: Senior) {
 function parseLimit(raw: unknown, fallback: number, max: number): number {
   const n = Number(raw);
   return Number.isInteger(n) && n > 0 ? Math.min(n, max) : fallback;
-}
-
-function requireSenior(req: Request<{ id: string }>, res: Response): Senior | undefined {
-  const senior = store.seniors.get(req.params.id);
-  if (senior && store.canAccess(currentUserId(res), senior.id)) return senior;
-  // Same response for "doesn't exist" and "no access", so IDs can't be probed.
-  res.status(404).json({ error: "Senior not found" });
-  return undefined;
 }
 
 dashboardRouter.get("/me", (_req, res) => {

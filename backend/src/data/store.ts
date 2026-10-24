@@ -27,10 +27,18 @@ export function seniorsFor(userId: string): Senior[] {
 
 export function addReading(reading: Reading): void {
   const list = readings.get(reading.seniorId) ?? [];
-  list.push(reading);
+  // Phone syncs can deliver older samples late; keep the list in time order.
+  let i = list.length;
+  while (i > 0 && list[i - 1]!.recordedAt > reading.recordedAt) i--;
+  list.splice(i, 0, reading);
   if (list.length > MAX_READINGS_PER_SENIOR) list.splice(0, list.length - MAX_READINGS_PER_SENIOR);
   readings.set(reading.seniorId, list);
-  latest.set(reading.seniorId, { ...latest.get(reading.seniorId), [reading.type]: reading });
+
+  const current = latest.get(reading.seniorId) ?? {};
+  const previous = current[reading.type];
+  if (!previous || previous.recordedAt <= reading.recordedAt) {
+    latest.set(reading.seniorId, { ...current, [reading.type]: reading });
+  }
 }
 
 /** The most recent `limit` readings, oldest first (chart-friendly). */
