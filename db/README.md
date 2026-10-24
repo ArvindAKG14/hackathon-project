@@ -36,17 +36,39 @@ nests it at `/tmp/db/db`:
 docker exec my-postgres rm -rf /tmp/db; docker cp .\db my-postgres:/tmp/db
 ```
 
-### Hosted (Supabase / Neon / Railway)
+Connection string for local work: `postgresql://postgres@localhost:5432/health_monitor`
 
-Plain SQL with no vendor-specific syntax — paste each migration into the SQL editor
-in filename order, or:
+### Supabase
+
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 8 migrations applied
+and seeded against PostgreSQL 17.11. You only need this section to re-apply from
+scratch.
+
+Use the **Session pooler** connection string (Dashboard → Connect → Session pooler):
+
+```
+postgresql://postgres.ofuiulitkslywrxcbrmv:[PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+```
+
+Two gotchas, both confirmed the hard way:
+
+- **Not the Direct connection.** `db.<ref>.supabase.co` is IPv6-only and will not
+  resolve from a Docker container or most home ISPs.
+- **Session pooler (5432), not Transaction pooler (6543).** Migrations wrap multiple
+  statements per transaction and `seed.sql` calls `setseed()`; transaction mode can't
+  carry session state.
 
 ```bash
 for f in db/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 psql "$DATABASE_URL" -f db/seed.sql
+psql "$DATABASE_URL" -f db/verify.sql
 ```
 
-Connection string for local work: `postgresql://postgres@localhost:5432/health_monitor`
+The schema is plain SQL with no vendor-specific syntax, so it also runs unmodified on
+Neon, Railway, or any PostgreSQL 15+.
+
+> `public.test` (empty, created by someone on the team) is unrelated to this schema and
+> is left untouched by the migrations and the seed.
 
 ## Files
 
@@ -59,6 +81,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 | `migrations/005_sleep_and_blood_pressure.sql` | `sleep_sessions`, `blood_pressure_readings` |
 | `migrations/006_alerts.sql` | `alert_thresholds`, `alerts` |
 | `migrations/007_views.sql` | `latest_measurements` view |
+| `migrations/008_rls.sql` | Row-level security — **required before exposing over HTTP** |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
 
@@ -176,6 +199,36 @@ on that side — SpO2 has only a floor, temperature has both.
 not foreign keys. A caregiver who later widens the safe range must not silently rewrite
 the history of why an alert fired.
 
+### Security: read this before writing any API code
+
+Supabase publishes every table in `public` through PostgREST. **The `anon` key is a
+public, client-side credential** — it ships inside the web app's JavaScript bundle.
+Without row-level security, anyone who opens devtools can read every senior's health
+data from `/rest/v1/measurements`.
+
+`008_rls.sql` closes this. All 9 tables have RLS enabled with **no policies**, and the
+`anon`/`authenticated` grants are revoked. Verified against the live project — `anon`
+is denied on `measurements`, `users`, `alerts`, `sleep_sessions`,
+`blood_pressure_readings`, and `latest_measurements`.
+
+It also sets `security_invoker = on` on `latest_measurements`. This is easy to miss: a
+PostgreSQL view runs with its **owner's** permissions by default, so the view would
+have handed out exactly the rows that RLS on `measurements` is there to protect.
+
+**Therefore:**
+
+- The REST API connects with the **`service_role`** key, which has `BYPASSRLS`.
+- That key must **never** reach a browser — server-side environment variable only. If
+  it leaks, rotate it in Dashboard → Settings → API.
+- Authorization is the API's job, via the `caregiver_links` check below. The database
+  denies everyone by default; your API is what decides who sees what.
+
+Because auth is Auth0 rather than Supabase Auth, `auth.uid()` policies aren't
+available. Deny-all plus a trusted server-side key is the correct shape here. If you
+later want the browser to query Supabase directly, that means wiring Auth0 JWTs into
+Supabase's custom-JWT setting and writing real policies — a deliberate project, not a
+config toggle.
+
 ### Time zones
 
 Every timestamp is `timestamptz`, stored in UTC. `users.timezone` holds an IANA zone
@@ -259,7 +312,8 @@ DELETE FROM measurements WHERE data_source_id IN
 
 ## Deliberately not included
 
-- **Row-level security** — `auth0_sub` is the natural RLS key when you want it
+- **Per-user RLS policies** — the tables are deny-all (see Security above). Granular
+  policies only become possible once Auth0 JWTs are wired into Supabase
 - **Partitioning / retention** — unnecessary below millions of rows
 - **OAuth token storage** — HealthKit and Health Connect are on-device; there are no
   server-side tokens to store
