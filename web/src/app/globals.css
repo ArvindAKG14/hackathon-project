@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #1d2b36;
+  --ink-soft: #4a5a66;
+  --paper: #f7f9f8;
+  --surface: #ffffff;
+  --care: #2f6f5e;
+  --care-strong: #24574a;
+  --on-care: #ffffff;
+  --mist: #e2ece8;
+  --line: #cfdcd7;
+  --marigold: #b97818;
+  --marigold-tint: #fbefd9;
+  --rose: #b8434b;
+  --rose-tint: #f7e1e2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6eef0;
+    --ink-soft: #a9b8bf;
+    --paper: #13201f;
+    --surface: #1a2a29;
+    --care: #6fbfa6;
+    --care-strong: #8fd3bd;
+    --on-care: #10201c;
+    --mist: #213634;
+    --line: #2f4644;
+    --marigold: #e9ad55;
+    --marigold-tint: #3a2f1c;
+    --rose: #e07a80;
+    --rose-tint: #3d2427;
+  }
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-care: var(--care);
+  --color-care-strong: var(--care-strong);
+  --color-on-care: var(--on-care);
+  --color-mist: var(--mist);
+  --color-line: var(--line);
+  --color-marigold: var(--marigold);
+  --color-marigold-tint: var(--marigold-tint);
+  --color-rose: var(--rose);
+  --color-rose-tint: var(--rose-tint);
+  --font-sans: var(--font-atkinson);
+}
+
+html {
+  font-size: 118.75%; /* 19px base: comfortable for older readers */
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-atkinson), system-ui, sans-serif;
+}
+
+:focus-visible {
+  outline: 3px solid var(--care);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Hero pill organiser: compartments fill one after another on load */
+@keyframes fill-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.pill-dot {
+  animation: fill-in 360ms cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+  animation-delay: calc(var(--i) * 70ms + 200ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .pill-dot {
+    animation: none;
+  }
+}
