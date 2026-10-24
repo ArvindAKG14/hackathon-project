@@ -1,40 +1,52 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import { signInAs } from "@/app/actions";
 import { Logo } from "@/components/logo";
-import { listCaregivers } from "@/lib/data";
+import { auth0 } from "@/lib/auth0";
+import { getCaregiverByAuth0Sub } from "@/lib/data";
 
 export const metadata: Metadata = { title: "Sign in: KinCare" };
 
-async function CaregiverList() {
-  await connection(); // Read the family list at request time, never at build time
-  const caregivers = await listCaregivers();
-  if (caregivers.length === 0) {
+// Links to /auth/* are plain <a>s, not <Link>: they must be full page loads.
+async function SignInOptions() {
+  const session = await auth0.getSession();
+
+  if (!session) {
     return (
-      <p className="mt-8 rounded-xl bg-marigold-tint px-5 py-4 text-lg">
-        There are no family accounts in the database yet. Load{" "}
-        <code>db/seed.sql</code> into Supabase to add the demo family.
-      </p>
+      <div className="mt-8 flex flex-col gap-3">
+        <a
+          href="/auth/login?returnTo=/dashboard"
+          className="rounded-full bg-care px-7 py-3.5 text-center text-lg font-bold text-on-care hover:bg-care-strong"
+        >
+          Sign in
+        </a>
+        <a
+          href="/auth/login?screen_hint=signup&returnTo=/dashboard"
+          className="rounded-full border-2 border-care px-7 py-3 text-center text-lg font-bold text-care-strong hover:bg-mist"
+        >
+          Create an account
+        </a>
+      </div>
     );
   }
+
+  if (await getCaregiverByAuth0Sub(session.user.sub)) redirect("/dashboard");
+
+  // Signed in to Auth0, but no users row has this auth0_sub yet.
   return (
-    <ul className="mt-8 flex flex-col gap-3">
-      {caregivers.map((c) => (
-        <li key={c.id}>
-          <form action={signInAs}>
-            <input type="hidden" name="userId" value={c.id} />
-            <button
-              type="submit"
-              className="w-full rounded-2xl border-2 border-line bg-surface px-6 py-4 text-left hover:border-care"
-            >
-              <span className="block text-xl font-bold">Continue as {c.full_name}</span>
-              {c.email && <span className="text-ink-soft">{c.email}</span>}
-            </button>
-          </form>
-        </li>
-      ))}
-    </ul>
+    <div className="mt-8 rounded-xl bg-marigold-tint px-5 py-4 text-lg">
+      <p>
+        You&apos;re signed in as <strong>{session.user.email ?? session.user.name}</strong>, but
+        this account isn&apos;t linked to a KinCare family profile yet.
+      </p>
+      <p className="mt-3">
+        To link it, set <code>auth0_sub</code> on your caregiver row in the <code>users</code> table to:
+      </p>
+      <code className="mt-2 block break-all rounded-lg bg-surface px-3 py-2">{session.user.sub}</code>
+      <a href="/auth/logout" className="mt-4 inline-block font-bold text-care-strong underline">
+        Sign out
+      </a>
+    </div>
   );
 }
 
@@ -47,11 +59,10 @@ export default function LoginPage() {
       <main className="mx-auto w-full max-w-lg flex-1 px-4 pb-20 pt-10">
         <h1 className="text-4xl font-bold">Sign in</h1>
         <p className="mt-4 text-lg leading-relaxed text-ink-soft">
-          This is the demo, so there&apos;s no password. Choose a family member
-          to see the parents they look after.
+          Sign in to see the parents you look after.
         </p>
-        <Suspense fallback={<p className="mt-8 text-lg text-ink-soft">Loading family members…</p>}>
-          <CaregiverList />
+        <Suspense fallback={<p className="mt-8 text-lg text-ink-soft">Checking your sign-in…</p>}>
+          <SignInOptions />
         </Suspense>
       </main>
     </>

@@ -77,23 +77,12 @@ export function localDate(at: Date | string, timeZone: string) {
   }).format(new Date(at));
 }
 
-export async function listCaregivers(): Promise<Caregiver[]> {
+/** The caregiver row for a signed-in Auth0 user (the token's `sub` claim). */
+export async function getCaregiverByAuth0Sub(sub: string): Promise<Caregiver | null> {
   const { data, error } = await db()
     .from("users")
     .select("id, full_name, email")
-    .eq("role", "caregiver")
-    .order("full_name");
-  if (error) fail("caregivers", error);
-  return data;
-}
-
-export async function getCaregiver(id: string): Promise<Caregiver | null> {
-  // Guard against a malformed cookie reaching a uuid column
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
-  const { data, error } = await db()
-    .from("users")
-    .select("id, full_name, email")
-    .eq("id", id)
+    .eq("auth0_sub", sub)
     .eq("role", "caregiver")
     .maybeSingle();
   if (error) fail("your profile", error);

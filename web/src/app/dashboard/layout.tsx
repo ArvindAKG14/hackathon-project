@@ -1,5 +1,4 @@
 import { Suspense } from "react";
-import { signOut } from "@/app/actions";
 import { Logo } from "@/components/logo";
 import { getCurrentCaregiver } from "@/lib/session";
 
@@ -8,14 +7,13 @@ async function UserMenu() {
   return (
     <div className="flex items-center gap-4">
       <span className="hidden text-ink-soft sm:inline">{caregiver.full_name}</span>
-      <form action={signOut}>
-        <button
-          type="submit"
-          className="rounded-full border-2 border-line px-4 py-1.5 font-bold hover:border-care"
-        >
-          Sign out
-        </button>
-      </form>
+      {/* A plain <a>, not <Link>: /auth/* routes must be full page loads */}
+      <a
+        href="/auth/logout"
+        className="rounded-full border-2 border-line px-4 py-1.5 font-bold hover:border-care"
+      >
+        Sign out
+      </a>
     </div>
   );
 }
