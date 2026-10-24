@@ -10,6 +10,13 @@ export const config = {
   simulatorIntervalMs: Number(process.env.SIMULATOR_INTERVAL_MS ?? 2000),
 
   /**
+   * "on" forces the vitals simulator to run even when seniors were loaded from
+   * the database, where its invented readings would disagree with the stored
+   * history. Off by default in that case.
+   */
+  simulator: process.env.SIMULATOR ?? "auto",
+
+  /**
    * Postgres connection string. When unset the server still runs -- device syncs
    * land in the in-memory store only -- so nobody needs a database to work on
    * the dashboard. See backend/.env.example.

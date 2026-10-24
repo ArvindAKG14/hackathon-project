@@ -170,6 +170,37 @@ Both platforms return **interval samples** with their own start/end times
 map straight onto the source payloads. Summing interval samples over a window gives the
 daily total — there is no stored cumulative counter to accidentally double-count.
 
+### How the pieces fit together
+
+```
+  phone  ──POST /api/devices/sync──>  backend/ (Express :4000)
+                                          │
+                                          ├── writes ──> Postgres
+                                          │
+                                          └── SSE event ──┐
+                                                          ↓
+  browser <──server-rendered HTML──  web/ (Next.js :3000) ──reads──> Postgres
+```
+
+The database is the single source of truth, and **both services read their
+identities from it**. `backend/src/data/seedFromDb.ts` loads seniors,
+caregivers and links from `users` / `caregiver_links` at startup, so an
+in-memory senior id *is* a `users.id` UUID.
+
+That matters more than it sounds. Before it, Express served hardcoded seniors
+(`s1` "Kamala Devi") while the web app served database rows (Margaret Chen) --
+same product, different people, and device syncs landed under ids the dashboard
+had never heard of. Now `/api/seniors`, the SSE stream, device pairing and the
+web dashboard all name the same person.
+
+With no `DATABASE_URL`, the backend falls back to the hardcoded demo seed, so it
+still runs standalone.
+
+**The vitals simulator is off when identities come from the database.** It
+invents readings every two seconds; against real seniors those would exist in
+the in-memory store but not in Postgres, so the live view and the stored history
+would quietly disagree. `SIMULATOR=on` forces it back on.
+
 ### How data actually gets in
 
 `backend/` implements the ingest path. A paired phone posts a batch to
@@ -190,6 +221,14 @@ npm run dev                                      # in one terminal
 npm run mock:push                                # HealthKit, last 6 hours
 npm run mock:push -- --platform health_connect --hours 24
 ```
+
+`mock:push` asks the backend which caregiver and senior exist rather than
+hardcoding ids, so it works against either the database-backed or the demo
+seed. Override with `MOCK_USER_ID` / `MOCK_SENIOR_ID`.
+
+A sync also pushes an SSE event, so an open dashboard updates within seconds.
+The web app refreshes itself every 3 minutes regardless; set
+`NEXT_PUBLIC_BACKEND_URL` in `web/.env.local` to get the faster path.
 
 **Canonical units are set by the ingest path**, not by the source. Both
 platforms' values are converted on arrival — HealthKit's 0–1 SpO2 fraction, its

@@ -60,7 +60,12 @@ function uuidV5(name: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function seniorUuid(seniorId: string): string {
+  // Seniors loaded by seedFromDb already carry their users.id, so hashing it
+  // would invent a second, unrelated row for the same person.
+  if (UUID_RE.test(seniorId)) return seniorId;
   return config.seniorUuids[seniorId] ?? uuidV5(`senior:${seniorId}`);
 }
 

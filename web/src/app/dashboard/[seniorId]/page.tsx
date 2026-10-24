@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { markAlertSeen } from "@/app/actions";
 import { BarChart, BloodPressureChart, HeartRateChart } from "@/components/charts";
+import { LiveUpdates } from "@/components/live-updates";
 import { getSeniorDashboard, localDate, type Alert, type MetricType, type SeniorDashboard, type Threshold } from "@/lib/data";
 import { ageFrom, formatDayTime, formatTime, minutesToHours, timeAgo, unitLabel, weekday } from "@/lib/format";
 import { getCurrentCaregiver } from "@/lib/session";
@@ -322,7 +323,12 @@ async function SeniorDashboard({ params }: { params: Promise<{ seniorId: string 
   const [{ seniorId }, caregiver] = await Promise.all([params, getCurrentCaregiver()]);
   const data = await getSeniorDashboard(caregiver.id, seniorId);
   if (!data) notFound();
-  return <Dashboard d={data} />;
+  return (
+    <>
+      <LiveUpdates caregiverId={caregiver.id} seniorId={seniorId} />
+      <Dashboard d={data} />
+    </>
+  );
 }
 
 export default function SeniorPage({ params }: PageProps<"/dashboard/[seniorId]">) {

@@ -17,9 +17,17 @@
 import type { Platform } from "../integrations/index.js";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:4000";
-const USER_ID = process.env.MOCK_USER_ID ?? "u1";
-const SENIOR_ID = process.env.MOCK_SENIOR_ID ?? "s1";
 const BATCH_SIZE = 500;
+
+// Which caregiver to act as. The backend loads identities from the database
+// when one is configured and falls back to the hardcoded demo seed otherwise,
+// so the ids differ between the two modes. Rather than guess, try each and
+// keep the one the server recognises.
+const CANDIDATE_USERS = [
+  process.env.MOCK_USER_ID,
+  "22222222-2222-2222-2222-222222222222", // David Chen, from db/seed.sql
+  "u1", // in-memory demo seed
+].filter((id): id is string => Boolean(id));
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -346,8 +354,31 @@ async function post(path: string, body: unknown, headers: Record<string, string>
   return text ? JSON.parse(text) : {};
 }
 
+async function get(path: string, headers: Record<string, string>): Promise<any | undefined> {
+  const res = await fetch(`${BASE_URL}${path}`, { headers });
+  return res.ok ? res.json() : undefined;
+}
+
+/** Finds a caregiver the backend knows about, and a senior they can see. */
+async function resolveTarget(): Promise<{ userId: string; seniorId: string; seniorName: string }> {
+  for (const userId of CANDIDATE_USERS) {
+    const headers = { "x-user-id": userId };
+    const me = await get("/api/me", headers);
+    if (!me) continue;
+    const seniors = (await get("/api/seniors", headers)) ?? [];
+    const senior = process.env.MOCK_SENIOR_ID
+      ? seniors.find((s: any) => s.id === process.env.MOCK_SENIOR_ID)
+      : seniors[0];
+    if (senior) return { userId, seniorId: senior.id, seniorName: senior.name };
+  }
+  throw new Error(
+    `No usable caregiver/senior found at ${BASE_URL}. Is the backend running, and does it have data?`,
+  );
+}
+
 async function main(): Promise<void> {
-  console.log(`Pairing a ${platform} device for senior ${SENIOR_ID} at ${BASE_URL}`);
+  const { userId: USER_ID, seniorId: SENIOR_ID, seniorName } = await resolveTarget();
+  console.log(`Pairing a ${platform} device for ${seniorName} (${SENIOR_ID}) at ${BASE_URL}`);
 
   const { code } = await post(`/api/seniors/${SENIOR_ID}/devices/pairing-code`, {}, { "x-user-id": USER_ID });
   const { token, device } = await post("/api/devices/pair", {
