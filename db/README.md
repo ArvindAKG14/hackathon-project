@@ -170,6 +170,33 @@ Both platforms return **interval samples** with their own start/end times
 map straight onto the source payloads. Summing interval samples over a window gives the
 daily total — there is no stored cumulative counter to accidentally double-count.
 
+### How data actually gets in
+
+`backend/` implements the ingest path. A paired phone posts a batch to
+`POST /api/devices/sync`; the adapters in `backend/src/integrations/` convert the
+platform's native payload to canonical units, and `backend/src/db/persist.ts`
+writes it in one transaction.
+
+Set `DATABASE_URL` in `backend/.env` to turn persistence on — without it the
+server runs in memory only, so nobody needs database access to work on the
+dashboard. See `backend/.env.example`.
+
+No phone? `npm run mock:push` generates native HealthKit or Health Connect
+payloads and posts them through the real endpoints:
+
+```bash
+cd backend
+npm run dev                                      # in one terminal
+npm run mock:push                                # HealthKit, last 6 hours
+npm run mock:push -- --platform health_connect --hours 24
+```
+
+**Canonical units are set by the ingest path**, not by the source. Both
+platforms' values are converted on arrival — HealthKit's 0–1 SpO2 fraction, its
+`mmol<180.156>/L` glucose unit string, pounds, kilometres and Fahrenheit all
+normalize to the units in the table below. Blood glucose is **mg/dL**; `seed.sql`
+matches, so mock and real data share one scale.
+
 ### Metrics
 
 `measurements` holds every metric expressible as one number plus a unit. The
@@ -317,4 +344,5 @@ DELETE FROM measurements WHERE data_source_id IN
 - **Partitioning / retention** — unnecessary below millions of rows
 - **OAuth token storage** — HealthKit and Health Connect are on-device; there are no
   server-side tokens to store
-- **The REST API itself**
+- **The companion mobile apps** — the ingest contract they must post to is documented
+  at the top of `backend/src/integrations/healthkit.ts` and `healthConnect.ts`

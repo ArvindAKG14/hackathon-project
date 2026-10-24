@@ -1,9 +1,13 @@
 import { Router } from "express";
+import { persistSync } from "../db/persist.js";
+import { databaseEnabled } from "../db/pool.js";
 import * as devices from "../data/devices.js";
+import * as store from "../data/store.js";
 import { ADAPTERS, isPlatform } from "../integrations/index.js";
 import { currentUserId, requireSenior } from "../middleware/auth.js";
 import { currentDevice, requireDevice } from "../middleware/deviceAuth.js";
 import { recordReading } from "../services/readings.js";
+import { vitalFor } from "../types.js";
 
 const MAX_SAMPLES_PER_SYNC = 1000;
 
@@ -28,7 +32,7 @@ deviceRouter.post("/pair", (req, res) => {
   res.status(201).json(paired);
 });
 
-deviceRouter.post("/sync", requireDevice, (req, res) => {
+deviceRouter.post("/sync", requireDevice, async (req, res) => {
   const device = currentDevice(res);
   const { samples } = req.body ?? {};
   if (!Array.isArray(samples) || samples.length > MAX_SAMPLES_PER_SYNC) {
@@ -36,7 +40,30 @@ deviceRouter.post("/sync", requireDevice, (req, res) => {
     return;
   }
 
-  const { samples: normalized, skipped } = ADAPTERS[device.platform](samples);
+  const { samples: normalized, sleepSessions, skipped } = ADAPTERS[device.platform](samples);
+
+  // Persist before touching any in-memory state. The database write is
+  // idempotent, so a failed sync can simply be re-sent -- but only if we have
+  // not already recorded these sample ids as seen, which would make the retry
+  // a no-op and lose the batch.
+  let persisted;
+  try {
+    persisted = await persistSync({
+      seniorId: device.seniorId,
+      seniorName: store.seniors.get(device.seniorId)?.name ?? `Senior ${device.seniorId}`,
+      deviceId: device.id,
+      deviceName: device.name,
+      platform: device.platform,
+      samples: normalized,
+      sleepSessions,
+    });
+  } catch (error) {
+    console.error("[sync] database write failed:", error);
+    // 503 tells the phone to retry rather than drop the batch.
+    res.status(503).json({ error: "Could not store readings; retry this batch" });
+    return;
+  }
+
   let accepted = 0;
   let duplicates = 0;
   for (const sample of normalized) {
@@ -44,18 +71,29 @@ deviceRouter.post("/sync", requireDevice, (req, res) => {
       duplicates++;
       continue;
     }
-    recordReading({
-      seniorId: device.seniorId,
-      type: sample.type,
-      value: sample.value,
-      source: device.platform,
-      recordedAt: sample.recordedAt,
-    });
+    // The live dashboard only understands the six alertable vitals; activity
+    // and sleep are persisted but not streamed.
+    const vital = vitalFor(sample.type);
+    if (vital) {
+      recordReading({
+        seniorId: device.seniorId,
+        type: vital,
+        value: sample.value,
+        source: device.platform,
+        recordedAt: sample.recordedAt,
+      });
+    }
     accepted++;
   }
   devices.touchSync(device);
 
-  res.json({ accepted, duplicates, skipped });
+  res.json({
+    accepted,
+    duplicates,
+    skipped,
+    sleepSessions: sleepSessions.length,
+    stored: databaseEnabled ? persisted : null,
+  });
 });
 
 /** Called by the dashboard (logged-in relatives) to connect and manage a senior's phones. */

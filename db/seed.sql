@@ -248,14 +248,17 @@ FROM (
 ) AS d;
 
 -- Blood glucose, before breakfast and after dinner.
+-- mg/dL is the canonical unit: backend/src/integrations converts both HealthKit's
+-- mmol<180.156>/L and Health Connect's mmol/L to mg/dL on ingest, so mock data
+-- has to match or the dashboard would be plotting two scales on one axis.
 INSERT INTO measurements
     (senior_id, data_source_id, metric_type, value, unit, recorded_at, external_id)
 SELECT
     '11111111-1111-1111-1111-111111111111',
     'aaaaaaaa-0000-0000-0000-000000000001',
     'blood_glucose',
-    round((CASE WHEN slot = time '07:30' THEN 5.1 ELSE 6.4 END + random() * 1.2)::numeric, 3),
-    'mmol/L',
+    round((CASE WHEN slot = time '07:30' THEN 92 ELSE 115 END + random() * 22)::numeric, 3),
+    'mg/dL',
     (day::date + slot) AT TIME ZONE 'America/New_York',
     'mock-glucose-' || extract(epoch FROM (day::date + slot) AT TIME ZONE 'America/New_York')::bigint
 FROM generate_series((CURRENT_DATE - 7)::timestamp,
@@ -332,7 +335,7 @@ INSERT INTO alert_thresholds (senior_id, metric_type, min_value, max_value, seve
     ('11111111-1111-1111-1111-111111111111', 'respiratory_rate',         10,   24,   'warning'),
     ('11111111-1111-1111-1111-111111111111', 'blood_pressure_systolic',  NULL, 145,  'warning'),
     ('11111111-1111-1111-1111-111111111111', 'blood_pressure_diastolic', NULL, 95,   'warning'),
-    ('11111111-1111-1111-1111-111111111111', 'blood_glucose',            3.9,  10.0, 'warning');
+    ('11111111-1111-1111-1111-111111111111', 'blood_glucose',            70,   180,  'warning');
 
 
 -- ---------------------------------------------------------------------------
