@@ -1,9 +1,10 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
-// Server-only client using the secret key. The schema has no row-level
-// security, so every query that returns a senior's data must go through
-// the authorization check in data.ts first.
+// Server-only client using the secret key. RLS is enabled on every table with
+// no policies (db/migrations/008), so the anon key reads nothing at all; this
+// key bypasses RLS. That makes the authorization check in data.ts the only
+// thing standing between a caregiver and someone else's senior.
 export function db() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY;

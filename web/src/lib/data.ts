@@ -106,7 +106,7 @@ export async function listLinkedSeniors(caregiverId: string): Promise<LinkedSeni
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
 }
 
-async function getLinkedSenior(caregiverId: string, seniorId: string) {
+export async function getLinkedSenior(caregiverId: string, seniorId: string) {
   if (!/^[0-9a-f-]{36}$/i.test(seniorId)) return null;
   const seniors = await listLinkedSeniors(caregiverId);
   return seniors.find((s) => s.id === seniorId) ?? null;

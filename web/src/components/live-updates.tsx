@@ -4,66 +4,37 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 // The page is server-rendered, so it shows whatever was true at load time.
-// These two mechanisms keep it current:
+// This re-renders it on an interval, matching how often the companion app
+// pushes readings.
 //
-//   Polling    always on. Re-renders every 3 minutes, matching how often the
-//              companion app pushes. Works with no backend running.
-//   SSE        when NEXT_PUBLIC_BACKEND_URL is set. The Express backend emits
-//              an event the moment a device sync lands, so the dashboard
-//              updates in seconds instead of waiting for the next poll.
+// router.refresh() re-runs the server component and streams fresh HTML in
+// without a full navigation, so scroll position and client state survive.
 //
-// Both call router.refresh(), which re-runs the server component and streams
-// fresh HTML in without losing scroll position or client state.
+// Why polling and not a live push: ingest and this page are separate
+// serverless invocations with no shared memory, so an in-process event bus
+// cannot reach the browser. Supabase Realtime would work, but RLS is deny-all
+// (migration 008) and the browser holds no key that can read anything. Push
+// would mean wiring Auth0 JWTs into Supabase and writing real policies --
+// worth doing eventually, overkill for a 3-minute refresh target.
 const POLL_MS = 180_000;
-/** A sync can carry hundreds of readings; without this each one would refresh. */
-const MIN_GAP_MS = 10_000;
 
-export function LiveUpdates({ caregiverId, seniorId }: { caregiverId: string; seniorId: string }) {
+export function LiveUpdates() {
   const router = useRouter();
 
   useEffect(() => {
-    let lastRefresh = 0;
-    let pending: ReturnType<typeof setTimeout> | undefined;
-
-    const refresh = () => {
-      lastRefresh = Date.now();
-      router.refresh();
+    const poll = setInterval(() => router.refresh(), POLL_MS);
+    // Catch up immediately when someone returns to the tab, rather than
+    // showing stale numbers until the next interval.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") router.refresh();
     };
-
-    const refreshThrottled = () => {
-      const elapsed = Date.now() - lastRefresh;
-      if (elapsed >= MIN_GAP_MS) {
-        refresh();
-      } else if (!pending) {
-        pending = setTimeout(() => {
-          pending = undefined;
-          refresh();
-        }, MIN_GAP_MS - elapsed);
-      }
-    };
-
-    const poll = setInterval(refresh, POLL_MS);
-
-    const base = process.env.NEXT_PUBLIC_BACKEND_URL;
-    let stream: EventSource | undefined;
-    if (base) {
-      // EventSource cannot set headers, hence userId in the query string --
-      // see the note on requireUser in backend/src/middleware/auth.ts.
-      const url = `${base}/api/stream?userId=${encodeURIComponent(caregiverId)}&seniorId=${encodeURIComponent(seniorId)}`;
-      stream = new EventSource(url);
-      stream.addEventListener("reading", refreshThrottled);
-      stream.addEventListener("alert", refresh);
-      // A dropped connection is not worth surfacing: polling still covers us,
-      // and EventSource reconnects on its own.
-      stream.onerror = () => {};
-    }
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       clearInterval(poll);
-      if (pending) clearTimeout(pending);
-      stream?.close();
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [router, caregiverId, seniorId]);
+  }, [router]);
 
   return null;
 }

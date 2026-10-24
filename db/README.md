@@ -19,7 +19,8 @@ docker cp .\db my-postgres:/tmp/db
 
 # Migrations, in order
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
-           "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views")
+           "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
+           "008_rls","009_device_pairing")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -40,7 +41,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 8 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 9 migrations applied
 and seeded against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -82,6 +83,7 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/006_alerts.sql` | `alert_thresholds`, `alerts` |
 | `migrations/007_views.sql` | `latest_measurements` view |
 | `migrations/008_rls.sql` | Row-level security — **required before exposing over HTTP** |
+| `migrations/009_device_pairing.sql` | Device tokens and pairing codes |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
 
@@ -173,68 +175,68 @@ daily total — there is no stored cumulative counter to accidentally double-cou
 ### How the pieces fit together
 
 ```
-  phone  ──POST /api/devices/sync──>  backend/ (Express :4000)
-                                          │
-                                          ├── writes ──> Postgres
-                                          │
-                                          └── SSE event ──┐
-                                                          ↓
-  browser <──server-rendered HTML──  web/ (Next.js :3000) ──reads──> Postgres
+  phone ──POST /api/devices/sync──> web/ (Next.js) ──writes──> Postgres
+                                        │                          ↑
+  browser <──server-rendered HTML───────┘ ───────reads─────────────┘
 ```
 
-The database is the single source of truth, and **both services read their
-identities from it**. `backend/src/data/seedFromDb.ts` loads seniors,
-caregivers and links from `users` / `caregiver_links` at startup, so an
-in-memory senior id *is* a `users.id` UUID.
+One service. There used to be a separate Express backend, but it served
+hardcoded seniors while the web app served database rows, so the two halves of
+the product described different people. The ingest path moved into Next.js
+route handlers and the Express app was deleted.
 
-That matters more than it sounds. Before it, Express served hardcoded seniors
-(`s1` "Kamala Devi") while the web app served database rows (Margaret Chen) --
-same product, different people, and device syncs landed under ids the dashboard
-had never heard of. Now `/api/seniors`, the SSE stream, device pairing and the
-web dashboard all name the same person.
+| Route | Auth | Purpose |
+|---|---|---|
+| `POST /api/seniors/:id/devices/pairing-code` | Auth0 session + `caregiver_links` | caregiver mints a code |
+| `POST /api/devices/pair` | the code itself | phone exchanges it for a bearer token |
+| `POST /api/devices/sync` | device bearer token | phone uploads readings |
+| `GET /api/seniors/:id/devices` | Auth0 session | list paired phones |
+| `DELETE /api/seniors/:id/devices/:deviceId` | Auth0 session | revoke one |
 
-With no `DATABASE_URL`, the backend falls back to the hardcoded demo seed, so it
-still runs standalone.
+Phones authenticate with a device token, not Auth0 — they are devices, not
+people. Only the SHA-256 hash is stored (`data_sources.token_hash`), so a
+database leak does not hand out working tokens. Pairing codes and tokens live
+in `device_pairing_codes` and `data_sources` rather than in memory, because a
+route handler has no memory between requests.
 
-**The vitals simulator is off when identities come from the database.** It
-invents readings every two seconds; against real seniors those would exist in
-the in-memory store but not in Postgres, so the live view and the stored history
-would quietly disagree. `SIMULATOR=on` forces it back on.
+**Reads use supabase-js; the ingest path uses `pg` directly.** Not an
+oversight: device sync depends on `ON CONFLICT DO NOTHING` against the partial
+unique indexes in migrations 004 and 005, and PostgREST's `on_conflict`
+parameter only takes a column list — it cannot express those indexes' `WHERE`
+predicate, so inference fails. Hence `DATABASE_URL` alongside `SUPABASE_URL`.
+
+**Freshness is polling, every 3 minutes** (`web/src/components/live-updates.tsx`),
+plus an immediate refresh when a backgrounded tab becomes visible. A live push
+would need either a long-lived process (gone) or Supabase Realtime, which
+deny-all RLS rules out until Auth0 JWTs are wired into Supabase.
 
 ### How data actually gets in
 
-`backend/` implements the ingest path. A paired phone posts a batch to
-`POST /api/devices/sync`; the adapters in `backend/src/integrations/` convert the
-platform's native payload to canonical units, and `backend/src/db/persist.ts`
-writes it in one transaction.
+`web/src/app/api/devices/sync` is the ingest endpoint. The adapters in
+`web/src/lib/ingest/` convert each platform's native payload to canonical
+units, and `web/src/lib/ingest/persist.ts` writes it in one transaction.
 
-Set `DATABASE_URL` in `backend/.env` to turn persistence on — without it the
-server runs in memory only, so nobody needs database access to work on the
-dashboard. See `backend/.env.example`.
+Set `DATABASE_URL` in `web/.env.local` — see `web/.env.example`.
 
 No phone? `npm run mock:push` generates native HealthKit or Health Connect
 payloads and posts them through the real endpoints:
 
 ```bash
-cd backend
+cd web
 npm run dev                                      # in one terminal
 npm run mock:push                                # HealthKit, last 6 hours
 npm run mock:push -- --platform health_connect --hours 24
 ```
 
-`mock:push` asks the backend which caregiver and senior exist rather than
-hardcoding ids, so it works against either the database-backed or the demo
-seed. Override with `MOCK_USER_ID` / `MOCK_SENIOR_ID`.
+It mints its pairing code straight in the database, since a CLI script has no
+Auth0 session; everything after that is real HTTP. Re-running stores almost
+nothing — external ids derive from snapped timestamps, so only the few samples
+at the leading edge of the window are new.
 
-A sync also pushes an SSE event, so an open dashboard updates within seconds.
-The web app refreshes itself every 3 minutes regardless; set
-`NEXT_PUBLIC_BACKEND_URL` in `web/.env.local` to get the faster path.
-
-**Canonical units are set by the ingest path**, not by the source. Both
-platforms' values are converted on arrival — HealthKit's 0–1 SpO2 fraction, its
-`mmol<180.156>/L` glucose unit string, pounds, kilometres and Fahrenheit all
-normalize to the units in the table below. Blood glucose is **mg/dL**; `seed.sql`
-matches, so mock and real data share one scale.
+**Canonical units are set by the ingest path**, not by the source. HealthKit's
+0–1 SpO2 fraction, its `mmol<180.156>/L` glucose unit string, pounds,
+kilometres and Fahrenheit all normalize on arrival. Blood glucose is **mg/dL**;
+`seed.sql` matches, so mock and real data share one scale.
 
 ### Metrics
 
@@ -384,4 +386,4 @@ DELETE FROM measurements WHERE data_source_id IN
 - **OAuth token storage** — HealthKit and Health Connect are on-device; there are no
   server-side tokens to store
 - **The companion mobile apps** — the ingest contract they must post to is documented
-  at the top of `backend/src/integrations/healthkit.ts` and `healthConnect.ts`
+  at the top of `web/src/lib/ingest/healthkit.ts` and `healthConnect.ts`

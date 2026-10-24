@@ -325,7 +325,7 @@ async function SeniorDashboard({ params }: { params: Promise<{ seniorId: string 
   if (!data) notFound();
   return (
     <>
-      <LiveUpdates caregiverId={caregiver.id} seniorId={seniorId} />
+      <LiveUpdates />
       <Dashboard d={data} />
     </>
   );
