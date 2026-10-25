@@ -4,9 +4,11 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { markAlertSeen } from "@/app/actions";
 import { BarChart, BloodPressureChart, HeartRateChart } from "@/components/charts";
+import { CheckIn } from "@/components/check-in";
 import { LiveUpdates } from "@/components/live-updates";
 import { CreateShareCode } from "@/components/share-code";
 import { getSeniorDashboard, localDate, type Alert, type LinkedSenior, type MetricType, type SeniorDashboard, type Threshold } from "@/lib/data";
+import { greeting, listCheckIns } from "@/lib/check-in";
 import { ageFrom, formatDayTime, formatTime, minutesToHours, timeAgo, unitLabel, weekday } from "@/lib/format";
 import { getCurrentCaregiver } from "@/lib/session";
 import { buildSummaryInput, getDailySummary } from "@/lib/summary";
@@ -102,7 +104,11 @@ function AlertRow({ alert, tz, open }: { alert: Alert; tz: string; open: boolean
   const headline =
     alert.alert_kind === "no_data"
       ? "No readings"
-      : critical
+      : alert.alert_kind === "check_in"
+        ? critical
+          ? "Urgent, from a check-in"
+          : "From a check-in"
+        : critical
         ? "Urgent"
         : alert.severity === "warning"
           ? "Check soon"
@@ -145,7 +151,15 @@ function fmt(value: number, metric: MetricType) {
   return value.toFixed(decimals);
 }
 
-function Dashboard({ d, summary }: { d: SeniorDashboard; summary: React.ReactNode }) {
+function Dashboard({
+  d,
+  summary,
+  checkInNotes,
+}: {
+  d: SeniorDashboard;
+  summary: React.ReactNode;
+  checkInNotes: React.ReactNode;
+}) {
   const tz = d.senior.timezone;
   const now = d.now;
   const age = ageFrom(d.senior.date_of_birth, new Date(now));
@@ -206,6 +220,8 @@ function Dashboard({ d, summary }: { d: SeniorDashboard; summary: React.ReactNod
         </p>
       )}
 
+      <CheckIn seniorId={d.senior.id} firstName={firstName!} greeting={greeting(firstName!)} />
+
       {summary}
 
       {d.openAlerts.length > 0 ? (
@@ -227,6 +243,8 @@ function Dashboard({ d, summary }: { d: SeniorDashboard; summary: React.ReactNod
           No open alerts. Every reading is within {firstName}&apos;s safe range, or has been seen.
         </p>
       )}
+
+      {checkInNotes}
 
       <section aria-label="Latest readings" className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 lg:grid-cols-4">
         {metricTile("heart_rate", "Heart rate")}
@@ -353,10 +371,41 @@ async function DailySummary({ senior }: { senior: LinkedSenior }) {
     >
       <p className="text-lg leading-relaxed">{summary}</p>
       <p className="mt-3 text-sm text-ink-soft">
-        Written from this week's readings. It describes what the numbers show — it isn't
+        Written from this week&apos;s readings. It describes what the numbers show — it isn&apos;t
         medical advice.
       </p>
     </section>
+  );
+}
+
+/**
+ * Notes from the senior's own spoken check-ins, newest first. Nothing at all
+ * until there is one: the banner above already says how to start.
+ */
+async function CheckInNotes({ senior }: { senior: LinkedSenior }) {
+  const notes = await listCheckIns(senior.id);
+  if (notes.length === 0) return null;
+  const firstName = senior.full_name.split(" ")[0];
+
+  return (
+    <Section title={`In ${firstName}'s words`} note="Notes from recent check-ins, written from what they said. Not medical advice.">
+      <ul className="flex flex-col gap-3">
+        {notes.map((n) => (
+          <li
+            key={n.id}
+            className={`rounded-xl px-5 py-4 ${n.needsAttention ? "border-2 border-marigold bg-marigold-tint" : "bg-paper"}`}
+          >
+            <p className="font-bold">
+              {n.needsAttention && <span className="text-marigold">Worth following up, </span>}
+              <span className={n.needsAttention ? "font-normal text-ink-soft" : ""}>
+                {formatDayTime(n.endedAt, senior.timezone)}
+              </span>
+            </p>
+            <p className="mt-1 text-lg leading-relaxed">{n.summary}</p>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -374,6 +423,11 @@ async function SeniorDashboard({ params }: { params: Promise<{ seniorId: string 
         summary={
           <Suspense fallback={null}>
             <DailySummary senior={data.senior} />
+          </Suspense>
+        }
+        checkInNotes={
+          <Suspense fallback={null}>
+            <CheckInNotes senior={data.senior} />
           </Suspense>
         }
       />

@@ -21,7 +21,8 @@ docker cp .\db my-postgres:/tmp/db
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
            "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
-           "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries","016_alert_wording")
+           "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries","016_alert_wording",
+           "017_check_ins")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -94,6 +95,7 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/014_stale_data_alerts.sql` | no_data alerts + hourly pg_cron check |
 | `migrations/015_daily_summaries.sql` | Cached plain-language weekly summaries |
 | `migrations/016_alert_wording.sql` | `metric_label()`, `threshold_alert_message()` |
+| `migrations/017_check_ins.sql` | `check_ins` (notes from spoken check-ins) + `check_in` alert kind |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |

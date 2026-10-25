@@ -1,6 +1,7 @@
 import "server-only";
 import { ConfigError } from "./config-error";
 import { localDate } from "./data";
+import { endpointFor, MODELS } from "./gemini";
 import { pg } from "./pg";
 
 // A short plain-language summary of a senior's week, written by Gemini from
@@ -16,18 +17,6 @@ import { pg } from "./pg";
 // one path that has to be fast, fails when the API does, and could soften a
 // warning. Alerts stay templated.
 
-// Tried in order. Flash models get overloaded on the free tier and answer 503
-// or simply hang; without a fallback that would mean no summary for the whole
-// day, since the result is cached per day.
-//
-// Not newest-first. gemini-3.8-flash failed every attempt across half an hour
-// of testing, so leading with it buys a guaranteed timeout before falling
-// through. For a 60-word plain-language paragraph the model tier makes little
-// difference and availability makes all of it, so the reliable one goes first
-// and the newer one is the upgrade when it is free.
-const MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"] as const;
-const endpointFor = (model: string) =>
-  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 /** The table's CHECK rejects anything longer; fail before writing, not after. */
 const MAX_CHARS = 2000;
 // Per model, not per request. A hung primary must not eat the whole budget
