@@ -191,7 +191,9 @@ export async function buildSummaryInput(
          SELECT (period_start AT TIME ZONE $2)::date AS day,
                 data_source_id,
                 sum(value) AS source_total
-         FROM measurements
+         -- Deduplicated view: Health Connect sends a daily rollup as well as
+         -- the granular records, and summing both doubles the day (018).
+         FROM measurements_deduplicated
          WHERE senior_id = $1 AND metric_type = 'steps' AND period_start IS NOT NULL
            AND period_start > now() - interval '8 days'
          GROUP BY 1, 2

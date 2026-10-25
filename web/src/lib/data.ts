@@ -173,7 +173,10 @@ export async function getSeniorDashboard(
         .order("recorded_at")
         .limit(1000),
       client
-        .from("measurements")
+        // The deduplicated view, not the table: Health Connect returns a
+        // daily rollup alongside the granular records, and summing both
+        // doubles the day. See migration 018.
+        .from("measurements_deduplicated")
         .select("value, recorded_at, data_source_id")
         .eq("senior_id", seniorId)
         .eq("metric_type", "steps")

@@ -22,7 +22,7 @@ $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
            "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
            "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries","016_alert_wording",
-           "017_check_ins")
+           "017_check_ins","018_dedupe_overlapping_intervals")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -44,7 +44,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 16 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 18 migrations applied
 and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -96,6 +96,7 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/015_daily_summaries.sql` | Cached plain-language weekly summaries |
 | `migrations/016_alert_wording.sql` | `metric_label()`, `threshold_alert_message()` |
 | `migrations/017_check_ins.sql` | `check_ins` (notes from spoken check-ins) + `check_in` alert kind |
+| `migrations/018_dedupe_overlapping_intervals.sql` | `measurements_deduplicated` view: drops rollup rows |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
@@ -334,6 +335,33 @@ available. Deny-all plus a trusted server-side key is the correct shape here. If
 later want the browser to query Supabase directly, that means wiring Auth0 JWTs into
 Supabase's custom-JWT setting and writing real policies — a deliberate project, not a
 config toggle.
+
+### Health Connect sends rollups as well as samples
+
+`readRecords(StepsRecord)` returns records from **every app that writes steps**.
+On a Samsung phone the handset sensor writes granular intervals *and* Samsung
+Health writes a daily rollup covering the same walking. Both are valid records,
+so summing them doubles the day:
+
+```
+granular records   470
+daily rollup       470
+shown on screen    940
+```
+
+`measurements_deduplicated` (migration 018) drops any interval record that
+**strictly** contains a finer record of the same metric. Strict matters: two
+records covering exactly the same span do not contain one another, so neither
+is dropped and an identical pair cannot eliminate itself. A lone rollup with
+nothing finer beneath it also survives, and is still counted.
+
+**Sum interval metrics from the view, not the table.** The table stays correct
+for ingest and for latest-value lookups.
+
+This is interim. The complete fix is to carry Health Connect's
+`metadata.dataOrigin` through from the Android app and apply the rule below one
+level finer — sum within an origin, take the max across origins. That needs an
+app change; the view does not.
 
 ### Never sum a metric across data sources
 
