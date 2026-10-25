@@ -20,7 +20,7 @@ docker cp .\db my-postgres:/tmp/db
 # Migrations, in order
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
-           "008_rls","009_device_pairing")
+           "008_rls","009_device_pairing","010_rls_policies")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -41,7 +41,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 9 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 10 migrations applied
 and seeded against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -84,8 +84,10 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/007_views.sql` | `latest_measurements` view |
 | `migrations/008_rls.sql` | Row-level security — **required before exposing over HTTP** |
 | `migrations/009_device_pairing.sql` | Device tokens and pairing codes |
+| `migrations/010_rls_policies.sql` | Per-user RLS policies + Realtime publication |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
+| `verify_rls.sql` | Proves one family cannot see another's data |
 
 ## Schema
 
@@ -206,9 +208,15 @@ parameter only takes a column list — it cannot express those indexes' `WHERE`
 predicate, so inference fails. Hence `DATABASE_URL` alongside `SUPABASE_URL`.
 
 **Freshness is polling, every 3 minutes** (`web/src/components/live-updates.tsx`),
-plus an immediate refresh when a backgrounded tab becomes visible. A live push
-would need either a long-lived process (gone) or Supabase Realtime, which
-deny-all RLS rules out until Auth0 JWTs are wired into Supabase.
+plus an immediate refresh when a backgrounded tab becomes visible.
+
+Supabase Realtime is the intended replacement and the database side is ready —
+`010_rls_policies.sql` adds the per-user policies `postgres_changes` honours, and
+puts `measurements`, `alerts` and `blood_pressure_readings` in the
+`supabase_realtime` publication. Two pieces of configuration remain before the
+browser can subscribe: registering Auth0 as a Third-Party Auth provider in the
+Supabase dashboard, and an Auth0 API so the SDK can mint an audience-scoped access
+token. Until then, polling.
 
 ### How data actually gets in
 
@@ -274,10 +282,26 @@ public, client-side credential** — it ships inside the web app's JavaScript bu
 Without row-level security, anyone who opens devtools can read every senior's health
 data from `/rest/v1/measurements`.
 
-`008_rls.sql` closes this. All 9 tables have RLS enabled with **no policies**, and the
-`anon`/`authenticated` grants are revoked. Verified against the live project — `anon`
-is denied on `measurements`, `users`, `alerts`, `sleep_sessions`,
-`blood_pressure_readings`, and `latest_measurements`.
+`008_rls.sql` closes this: RLS on every table, no policies, `anon`/`authenticated`
+grants revoked. `010_rls_policies.sql` then adds real per-user policies now that
+Supabase can verify an Auth0 token.
+
+A caregiver sees exactly the seniors in their `caregiver_links`, enforced by the
+database rather than by the application remembering to check. **`SELECT` only** —
+`authenticated` has no `INSERT`/`UPDATE`/`DELETE` anywhere, so a stolen browser token
+cannot alter a row. `link_invitations` and `device_pairing_codes` have no policy at
+all: they hold codes that grant access, so the browser never sees one.
+
+Run `verify_rls.sql` to prove it. It builds a second, unrelated family and checks
+neither can see the other:
+
+```
+David          -> sees Margaret, blind to family B, can't see their user row
+Caregiver B    -> sees own senior, BLIND TO MARGARET, no alerts/sleep/BP leaked
+Unlinked user  -> 0 rows everywhere, including through the view
+No token       -> 0 rows
+anon blocked, authenticated read-only, share codes hidden
+```
 
 It also sets `security_invoker = on` on `latest_measurements`. This is easy to miss: a
 PostgreSQL view runs with its **owner's** permissions by default, so the view would
@@ -380,8 +404,9 @@ DELETE FROM measurements WHERE data_source_id IN
 
 ## Deliberately not included
 
-- **Per-user RLS policies** — the tables are deny-all (see Security above). Granular
-  policies only become possible once Auth0 JWTs are wired into Supabase
+- **Write policies** — `authenticated` has `SELECT` only. Every mutation goes through
+  a server action or the device ingest path, so there is nothing for a browser token
+  to write
 - **Partitioning / retention** — unnecessary below millions of rows
 - **OAuth token storage** — HealthKit and Health Connect are on-device; there are no
   server-side tokens to store
