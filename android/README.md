@@ -26,11 +26,14 @@ Health Connect.
 Use the deployed app:
 
 ```
-https://hackathon-project-hckthon.vercel.app
+https://www.kin-care.health
 ```
 
 HTTPS and always reachable, so the phone needs no tunnel, no cleartext
 exemption and no laptop running. Type it into the app's backend field.
+
+Use this host, not the old `*.vercel.app` one. Auth0's callback is fixed to
+this domain, so the other origin cannot complete a login.
 
 To point at a local `npm run dev` instead, the phone still has to reach your
 machine — a tunnel (`cloudflared tunnel --url http://localhost:3000`) or your
