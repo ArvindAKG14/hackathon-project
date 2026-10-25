@@ -21,7 +21,7 @@ docker cp .\db my-postgres:/tmp/db
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
            "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
-           "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries")
+           "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries","016_alert_wording")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -43,7 +43,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 15 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 16 migrations applied
 and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -93,11 +93,13 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/013_height_metric.sql` | `height` added to the `metric_type` enum |
 | `migrations/014_stale_data_alerts.sql` | no_data alerts + hourly pg_cron check |
 | `migrations/015_daily_summaries.sql` | Cached plain-language weekly summaries |
+| `migrations/016_alert_wording.sql` | `metric_label()`, `threshold_alert_message()` |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
 | `verify_rls.sql` | Proves one family cannot see another's data |
 | `verify_stale.sql` | Proves silence is alerted once per episode |
+| `verify_alert_dedup.sql` | Proves a sustained breach doesn't bury the caregiver |
 
 ## Schema
 
@@ -358,6 +360,25 @@ same root cause:
 
 Sleep and blood pressure are deduplicated rather than summed: one night is
 one night, and one instant is one reading.
+
+### One alert per problem, not per reading
+
+A phone syncing every three minutes with SpO2 stuck at 88% would raise twenty
+alerts an hour, and twenty alerts an hour is how people learn to ignore
+alerts. Two rules prevent it:
+
+- **One per metric per batch.** `DISTINCT ON` keeps the most recent breaching
+  reading — the current state, not the first blip.
+- **Nothing new while an equal-or-worse alert is open** for that metric.
+
+Deterioration still gets through: SpO2 slipping from `warning` to `critical`
+raises a second alert, because that is exactly when silence would be
+dangerous. Acknowledging clears the way for the next one.
+
+Wording comes from `threshold_alert_message()` (migration 016) so every alert
+reads the same way and says which direction the reading went. It is a fixed
+template on purpose, not generated text — an alert must be instant, identical
+every time, and cannot fail when an API does.
 
 ### Silence is a signal
 

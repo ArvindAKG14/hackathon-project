@@ -176,8 +176,20 @@ async function insertSleep(
  * using the alert_thresholds table.
  *
  * Only freshly inserted ids are considered, so a re-sync that inserts nothing
- * raises nothing -- deduplication at the measurement level gives us alert
- * deduplication for free.
+ * raises nothing -- measurement-level deduplication gives that for free.
+ *
+ * Two further rules stop a sustained breach from burying the caregiver. A
+ * phone syncing every three minutes with SpO2 stuck at 88% would otherwise
+ * produce twenty alerts an hour, and twenty alerts an hour is how people
+ * learn to ignore alerts.
+ *
+ *   One per metric per batch. DISTINCT ON keeps the most recent breaching
+ *   reading, since that is the current state rather than the first blip.
+ *
+ *   Nothing new while an equal-or-worse alert is already open for that
+ *   metric. A deterioration still gets through -- SpO2 slipping from warning
+ *   to critical raises a second alert -- because that is the case where
+ *   silence would be dangerous. Acknowledging clears the way for the next one.
  */
 async function raiseAlerts(
   client: PoolClient,
@@ -191,17 +203,25 @@ async function raiseAlerts(
       `INSERT INTO alerts
          (senior_id, metric_type, severity, triggered_value, threshold_min, threshold_max,
           message, measurement_id, triggered_at)
-       SELECT m.senior_id, m.metric_type, t.severity, m.value, t.min_value, t.max_value,
-              format('%s is %s %s, outside the safe range',
-                     initcap(replace(m.metric_type::text, '_', ' ')),
-                     trim_scale(m.value), m.unit),
+       SELECT DISTINCT ON (m.senior_id, m.metric_type)
+              m.senior_id, m.metric_type, t.severity, m.value, t.min_value, t.max_value,
+              public.threshold_alert_message(m.metric_type, m.value, m.unit, t.min_value, t.max_value),
               m.id, m.recorded_at
        FROM measurements m
        JOIN alert_thresholds t
          ON t.senior_id = m.senior_id AND t.metric_type = m.metric_type AND t.enabled
        WHERE m.id = ANY($1::bigint[])
          AND ((t.min_value IS NOT NULL AND m.value < t.min_value)
-           OR (t.max_value IS NOT NULL AND m.value > t.max_value))`,
+           OR (t.max_value IS NOT NULL AND m.value > t.max_value))
+         AND NOT EXISTS (
+             SELECT 1 FROM alerts open
+             WHERE open.senior_id = m.senior_id
+               AND open.metric_type = m.metric_type
+               AND open.alert_kind = 'threshold'
+               AND open.acknowledged_at IS NULL
+               AND open.severity >= t.severity
+         )
+       ORDER BY m.senior_id, m.metric_type, m.recorded_at DESC`,
       [measurementIds],
     );
     count += rowCount ?? 0;
@@ -213,8 +233,11 @@ async function raiseAlerts(
       `INSERT INTO alerts
          (senior_id, metric_type, severity, triggered_value, threshold_min, threshold_max,
           message, triggered_at)
-       SELECT b.senior_id, v.metric_type, t.severity, v.value, t.min_value, t.max_value,
-              format('Blood pressure %s/%s mmHg is outside the safe range', b.systolic, b.diastolic),
+       SELECT DISTINCT ON (b.senior_id, v.metric_type)
+              b.senior_id, v.metric_type, t.severity, v.value, t.min_value, t.max_value,
+              format('%s %s/%s mmHg.',
+                     public.threshold_alert_message(v.metric_type, v.value, 'mmHg', t.min_value, t.max_value),
+                     b.systolic, b.diastolic),
               b.recorded_at
        FROM blood_pressure_readings b
        CROSS JOIN LATERAL (VALUES
@@ -225,7 +248,16 @@ async function raiseAlerts(
          ON t.senior_id = b.senior_id AND t.metric_type = v.metric_type AND t.enabled
        WHERE b.id = ANY($1::bigint[])
          AND ((t.min_value IS NOT NULL AND v.value < t.min_value)
-           OR (t.max_value IS NOT NULL AND v.value > t.max_value))`,
+           OR (t.max_value IS NOT NULL AND v.value > t.max_value))
+         AND NOT EXISTS (
+             SELECT 1 FROM alerts open
+             WHERE open.senior_id = b.senior_id
+               AND open.metric_type = v.metric_type
+               AND open.alert_kind = 'threshold'
+               AND open.acknowledged_at IS NULL
+               AND open.severity >= t.severity
+         )
+       ORDER BY b.senior_id, v.metric_type, b.recorded_at DESC`,
       [bloodPressureIds],
     );
     count += rowCount ?? 0;
