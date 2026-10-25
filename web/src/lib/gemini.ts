@@ -18,9 +18,9 @@ export const MODELS = ["gemini-3.5-flash", "gemini-3.8-flash"] as const;
 export const endpointFor = (model: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
-// A spoken reply has to come back fast or the conversation feels broken, so
-// each model gets less time than the summary's 12 s.
-const TIMEOUT_MS = 10_000;
+// Per model, as in summary.ts. Reasoning comes before every reply, so a
+// tighter limit would turn slow answers into failed ones.
+const TIMEOUT_MS = 12_000;
 
 export type Turn = { role: "user" | "model"; text: string };
 
@@ -50,9 +50,10 @@ async function callModel(
       contents: turns.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
       generationConfig: {
         temperature: options.temperature,
-        // Gemini 3.x spends output budget on internal reasoning before the
-        // visible answer; see the note in summary.ts.
-        maxOutputTokens: 2000,
+        // Gemini 3.x spends ~1,500-1,900 tokens reasoning before a short
+        // answer, so 2,000 came back MAX_TOKENS; see the note in summary.ts.
+        // Only generated tokens are billed, so the headroom is free.
+        maxOutputTokens: 6000,
         ...(options.json && { responseMimeType: "application/json", responseSchema: options.json }),
       },
     }),
