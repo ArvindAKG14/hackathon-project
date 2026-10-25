@@ -20,13 +20,14 @@ docker cp .\db my-postgres:/tmp/db
 # Migrations, in order
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
-           "008_rls","009_device_pairing","010_rls_policies")
+           "008_rls","009_device_pairing","010_rls_policies","011_care_team_views")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
 
 # Mock data + verification
 docker exec my-postgres psql -U postgres -d health_monitor -f /tmp/db/seed.sql
+docker exec my-postgres psql -U postgres -d health_monitor -f /tmp/db/seed_more.sql
 docker exec my-postgres psql -U postgres -d health_monitor -f /tmp/db/verify.sql
 ```
 
@@ -41,8 +42,8 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 10 migrations applied
-and seeded against PostgreSQL 17.11. You only need this section to re-apply from
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 11 migrations applied
+and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
 Use the **Session pooler** connection string (Dashboard → Connect → Session pooler):
@@ -62,6 +63,7 @@ Two gotchas, both confirmed the hard way:
 ```bash
 for f in db/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 psql "$DATABASE_URL" -f db/seed.sql
+psql "$DATABASE_URL" -f db/seed_more.sql
 psql "$DATABASE_URL" -f db/verify.sql
 ```
 
@@ -85,7 +87,9 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/008_rls.sql` | Row-level security — **required before exposing over HTTP** |
 | `migrations/009_device_pairing.sql` | Device tokens and pairing codes |
 | `migrations/010_rls_policies.sql` | Per-user RLS policies + Realtime publication |
+| `migrations/011_care_team_views.sql` | `senior_caregivers` and `caregiver_seniors` views: who looks after whom |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
+| `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
 | `verify_rls.sql` | Proves one family cannot see another's data |
 
@@ -381,6 +385,16 @@ who both monitor her. Fixed UUIDs so the frontend can hardcode them:
 | `11111111-1111-1111-1111-111111111111` | Margaret Chen — senior, no `auth0_sub` |
 | `22222222-2222-2222-2222-222222222222` | David Chen — son, `auth0\|mock-david-chen` |
 | `33333333-3333-3333-3333-333333333333` | Priya Chen — daughter, `google-oauth2\|mock-priya-chen` |
+| `44444444-4444-4444-4444-444444444444` | Walter Chen — senior (80, Margaret's husband), no `auth0_sub`. From `seed_more.sql` |
+
+`seed_more.sql` links David to Walter, so one caregiver looks after two seniors, and
+adds share codes in every state: pending (Walter's, for Priya; another for Margaret),
+expired and revoked. Walter has no readings yet. See who looks after whom with:
+
+```sql
+SELECT senior_name, caregivers FROM senior_caregivers;  -- each senior's caregivers
+SELECT caregiver_name, seniors FROM caregiver_seniors;  -- each caregiver's seniors
+```
 
 Seven days of readings ending at load time, at the same cadence the real app will push:
 heart rate every 3 min on a diurnal curve (mid-50s asleep, ~80 during afternoon
