@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { Logo } from "@/components/logo";
 import { auth0 } from "@/lib/auth0";
-import { getCaregiverByAuth0Sub } from "@/lib/data";
 
 export const metadata: Metadata = { title: "Sign in: KinCare" };
 
@@ -30,24 +29,9 @@ async function SignInOptions() {
     );
   }
 
-  if (await getCaregiverByAuth0Sub(session.user.sub)) redirect("/dashboard");
-
-  // Signed in to Auth0, but no users row has this auth0_sub yet.
-  return (
-    <div className="mt-8 rounded-xl bg-marigold-tint px-5 py-4 text-lg">
-      <p>
-        You&apos;re signed in as <strong>{session.user.email ?? session.user.name}</strong>, but
-        this account isn&apos;t linked to a KinCare family profile yet.
-      </p>
-      <p className="mt-3">
-        To link it, set <code>auth0_sub</code> on your caregiver row in the <code>users</code> table to:
-      </p>
-      <code className="mt-2 block break-all rounded-lg bg-surface px-3 py-2">{session.user.sub}</code>
-      <a href="/auth/logout" className="mt-4 inline-block font-bold text-care-strong underline">
-        Sign out
-      </a>
-    </div>
-  );
+  // An account is created on first sign-in, so there is nothing left to do
+  // here: the dashboard asks for a share code if they aren't connected yet.
+  redirect("/dashboard");
 }
 
 export default function LoginPage() {

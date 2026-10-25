@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { RedeemShareCode } from "@/components/share-code";
 import { listLinkedSeniors } from "@/lib/data";
 import { ageFrom } from "@/lib/format";
 import { getCurrentCaregiver } from "@/lib/session";
@@ -15,10 +16,15 @@ async function SeniorList() {
     <>
       <h1 className="text-4xl font-bold">Hello, {caregiver.full_name.split(" ")[0]}</h1>
       {seniors.length === 0 ? (
-        <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
-          You&apos;re not linked to anyone yet. Ask the family member who set up
-          your parent&apos;s profile for a share code.
-        </p>
+        <>
+          <p className="mt-6 max-w-xl text-lg leading-relaxed text-ink-soft">
+            You&apos;re not connected to anyone yet. A family member who already uses
+            KinCare can give you a share code.
+          </p>
+          <div className="mt-8 max-w-xl">
+            <RedeemShareCode />
+          </div>
+        </>
       ) : (
         <>
           <p className="mt-3 text-lg text-ink-soft">The people you look after</p>
@@ -42,6 +48,9 @@ async function SeniorList() {
               );
             })}
           </ul>
+          <div className="mt-10 max-w-xl">
+            <RedeemShareCode />
+          </div>
         </>
       )}
     </>

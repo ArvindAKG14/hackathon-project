@@ -77,17 +77,8 @@ export function localDate(at: Date | string, timeZone: string) {
   }).format(new Date(at));
 }
 
-/** The caregiver row for a signed-in Auth0 user (the token's `sub` claim). */
-export async function getCaregiverByAuth0Sub(sub: string): Promise<Caregiver | null> {
-  const { data, error } = await db()
-    .from("users")
-    .select("id, full_name, email")
-    .eq("auth0_sub", sub)
-    .eq("role", "caregiver")
-    .maybeSingle();
-  if (error) fail("your profile", error);
-  return data;
-}
+// The caregiver lookup that used to live here moved to accounts.ts, which
+// creates the row when it is missing instead of returning null.
 
 export async function listLinkedSeniors(caregiverId: string): Promise<LinkedSenior[]> {
   const { data, error } = await db()

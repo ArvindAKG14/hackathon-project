@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { markAlertSeen } from "@/app/actions";
 import { BarChart, BloodPressureChart, HeartRateChart } from "@/components/charts";
 import { LiveUpdates } from "@/components/live-updates";
+import { CreateShareCode } from "@/components/share-code";
 import { getSeniorDashboard, localDate, type Alert, type MetricType, type SeniorDashboard, type Threshold } from "@/lib/data";
 import { ageFrom, formatDayTime, formatTime, minutesToHours, timeAgo, unitLabel, weekday } from "@/lib/format";
 import { getCurrentCaregiver } from "@/lib/session";
@@ -315,6 +316,8 @@ function Dashboard({ d }: { d: SeniorDashboard }) {
           </ul>
         </Section>
       )}
+
+      <CreateShareCode seniorId={d.senior.id} seniorName={d.senior.full_name} />
     </div>
   );
 }
