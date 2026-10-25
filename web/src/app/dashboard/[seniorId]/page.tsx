@@ -96,6 +96,16 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 
 function AlertRow({ alert, tz, open }: { alert: Alert; tz: string; open: boolean }) {
   const critical = alert.severity === "critical";
+  // A silence alert isn't "urgent" or "check soon" -- it means we have no
+  // idea how they are, which is its own category.
+  const headline =
+    alert.alert_kind === "no_data"
+      ? "No readings"
+      : critical
+        ? "Urgent"
+        : alert.severity === "warning"
+          ? "Check soon"
+          : "For information";
   return (
     <li
       className={`flex flex-col gap-3 rounded-xl px-5 py-4 sm:flex-row sm:items-center sm:justify-between ${
@@ -104,9 +114,7 @@ function AlertRow({ alert, tz, open }: { alert: Alert; tz: string; open: boolean
     >
       <div>
         <p className="font-bold">
-          <span className={critical ? "text-rose" : "text-marigold"}>
-            {critical ? "Urgent" : alert.severity === "warning" ? "Check soon" : "For information"}
-          </span>
+          <span className={critical ? "text-rose" : "text-marigold"}>{headline}</span>
           <span className="font-normal text-ink-soft">, {formatDayTime(alert.triggered_at, tz)}</span>
         </p>
         <p className="mt-1 text-lg">{alert.message}</p>

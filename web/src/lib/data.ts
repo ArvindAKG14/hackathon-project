@@ -2,8 +2,12 @@ import "server-only";
 import { db } from "./supabase";
 
 // Data access layer. Every function that returns a senior's data takes the
-// signed-in caregiver's id and checks caregiver_links first, as the schema's
-// README requires (there is no row-level security to fall back on).
+// signed-in caregiver's id and checks caregiver_links first.
+//
+// RLS policies exist (db/migrations/010) but do not apply here: this client
+// uses the service-role key, which bypasses them. They are the backstop for
+// the browser's own Realtime subscription. On the server, the check below is
+// still the only thing standing between a caregiver and someone else's senior.
 
 export type MetricType =
   | "heart_rate"
@@ -33,9 +37,14 @@ export type LinkedSenior = {
   relationship: string | null;
 };
 
+export type AlertKind = "threshold" | "no_data";
+
 export type Alert = {
   id: number;
-  metric_type: MetricType;
+  /** A reading outside its safe range, or nothing arriving at all. */
+  alert_kind: AlertKind;
+  /** NULL for no_data alerts: the absence of readings isn't about one metric. */
+  metric_type: MetricType | null;
   severity: Severity;
   message: string;
   triggered_at: string;
@@ -124,7 +133,7 @@ export async function getSeniorDashboard(
   const hoursAgo = (h: number) => new Date(now - h * 3_600_000).toISOString();
   const client = db();
   const alertColumns =
-    "id, metric_type, severity, message, triggered_at, acknowledged_at, acknowledger:users!alerts_acknowledged_by_fkey(full_name)";
+    "id, alert_kind, metric_type, severity, message, triggered_at, acknowledged_at, acknowledger:users!alerts_acknowledged_by_fkey(full_name)";
 
   const [sources, latest, bpLatest, thresholds, openAlerts, recentAlerts, heartRate, steps, sleep, bp] =
     await Promise.all([

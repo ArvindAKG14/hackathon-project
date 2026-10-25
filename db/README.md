@@ -21,7 +21,7 @@ docker cp .\db my-postgres:/tmp/db
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
            "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
-           "012_eastern_time")
+           "012_eastern_time","013_height_metric","014_stale_data_alerts")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -43,7 +43,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 12 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 14 migrations applied
 and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -90,10 +90,13 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/010_rls_policies.sql` | Per-user RLS policies + Realtime publication |
 | `migrations/011_care_team_views.sql` | `senior_caregivers` and `caregiver_seniors` views: who looks after whom |
 | `migrations/012_eastern_time.sql` | Database shows times in Eastern Time (EDT/EST) instead of UTC; stored instants unchanged |
+| `migrations/013_height_metric.sql` | `height` added to the `metric_type` enum |
+| `migrations/014_stale_data_alerts.sql` | no_data alerts + hourly pg_cron check |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
 | `verify_rls.sql` | Proves one family cannot see another's data |
+| `verify_stale.sql` | Proves silence is alerted once per episode |
 
 ## Schema
 
@@ -326,6 +329,33 @@ available. Deny-all plus a trusted server-side key is the correct shape here. If
 later want the browser to query Supabase directly, that means wiring Auth0 JWTs into
 Supabase's custom-JWT setting and writing real policies — a deliberate project, not a
 config toggle.
+
+### Silence is a signal
+
+Every other alert is raised by a reading that arrived. `detect_stale_data()`
+watches for readings that never come, because in elder care the dangerous
+failure is quiet: a dead phone, an uninstalled app or a watch in a drawer
+looks exactly like a healthy, resting senior. The dashboard's staleness badge
+only helps someone already looking, and the premise is that nobody is looking
+at 3am.
+
+`pg_cron` runs it hourly at :07. It lives in the database rather than a Vercel
+cron on purpose — a check that can go quiet has the same flaw it exists to
+catch.
+
+A senior is silent only when **every** paired phone is, so it takes the most
+recent sync across all of them. Revoked devices and the `manual`/`mock`
+sources are excluded: they were never going to report on a schedule.
+
+Alerts fire **once per silence episode**, not once per run. The rule is "is
+there already an alert raised later than the last sync?" — when data resumes,
+`last_sync_at` moves forward and the next silence qualifies again.
+Deliberately not keyed on acknowledgement, or one unread alert would suppress
+every future one.
+
+`alerts.alert_kind` distinguishes these from threshold breaches, and
+`metric_type` is nullable for them: the absence of readings isn't about one
+metric. A CHECK still requires it for `threshold` alerts.
 
 ### Time zones
 
