@@ -174,7 +174,7 @@ export async function getSeniorDashboard(
         .limit(1000),
       client
         .from("measurements")
-        .select("value, recorded_at")
+        .select("value, recorded_at, data_source_id")
         .eq("senior_id", seniorId)
         .eq("metric_type", "steps")
         .gte("recorded_at", hoursAgo(24 * 8))
@@ -243,12 +243,22 @@ export async function getSeniorDashboard(
     avg: values.reduce((a, b) => a + b, 0) / values.length,
   }));
 
-  // Steps are interval samples: summing them per local day gives the daily total
-  const stepTotals = new Map<string, number>();
+  // Steps are interval samples, so they sum within a source. They must NOT sum
+  // across sources: a phone and a watch each report the same person's whole
+  // day, so adding them double-counts. Total per source, then take the
+  // highest -- 5,000 from the phone and 4,800 from the watch means about
+  // 5,000 steps walked, not 9,800.
+  const perSource = new Map<string, Map<string, number>>();
   for (const r of steps.data ?? []) {
     const day = localDate(r.recorded_at, tz);
-    stepTotals.set(day, (stepTotals.get(day) ?? 0) + Number(r.value));
+    const source = (r.data_source_id as string | null) ?? "unknown";
+    const forDay = perSource.get(day) ?? new Map<string, number>();
+    forDay.set(source, (forDay.get(source) ?? 0) + Number(r.value));
+    perSource.set(day, forDay);
   }
+  const stepTotals = new Map<string, number>(
+    [...perSource].map(([day, sources]) => [day, Math.max(...sources.values())]),
+  );
   const stepsByDay = Array.from({ length: 7 }, (_, i) => {
     const date = localDate(new Date(now - (6 - i) * 86_400_000), tz);
     return { date, steps: Math.round(stepTotals.get(date) ?? 0) };
@@ -265,18 +275,39 @@ export async function getSeniorDashboard(
     recentAlerts: (recentAlerts.data as unknown as AlertRow[]).map(toAlert),
     heartRateByHour,
     stepsByDay,
-    sleep: (sleep.data ?? [])
-      .map((s) => ({
-        // A night belongs to the date it ended on: "last night" is this morning's date
-        night: localDate(s.ended_at, tz),
-        total: s.total_minutes,
-        deep: s.deep_minutes,
-        light: s.light_minutes,
-        rem: s.rem_minutes,
-        awake: s.awake_minutes,
-      }))
-      .reverse(),
-    bloodPressure: bp.data ?? [],
+    // One entry per night. Two devices reporting the same night is
+    // duplication, not extra sleep -- keep the longest record, which is the
+    // most complete one, and avoid two bars (and two identical React keys)
+    // for a single night.
+    sleep: [
+      ...(sleep.data ?? [])
+        .map((s) => ({
+          // A night belongs to the date it ended on: "last night" is this morning's date
+          night: localDate(s.ended_at, tz),
+          total: s.total_minutes,
+          deep: s.deep_minutes,
+          light: s.light_minutes,
+          rem: s.rem_minutes,
+          awake: s.awake_minutes,
+        }))
+        .reduce((byNight, s) => {
+          const existing = byNight.get(s.night);
+          if (!existing || s.total > existing.total) byNight.set(s.night, s);
+          return byNight;
+        }, new Map<string, { night: string; total: number; deep: number; light: number; rem: number; awake: number }>())
+        .values(),
+    ].sort((a, b) => a.night.localeCompare(b.night)),
+    // One reading per instant. Two devices reporting the same measurement is
+    // duplication, and the chart keys on recorded_at -- which is where the
+    // "two children with the same key" warning came from.
+    bloodPressure: [
+      ...(bp.data ?? [])
+        .reduce((byInstant, r) => {
+          if (!byInstant.has(r.recorded_at)) byInstant.set(r.recorded_at, r);
+          return byInstant;
+        }, new Map<string, NonNullable<typeof bp.data>[number]>())
+        .values(),
+    ],
   };
 }
 

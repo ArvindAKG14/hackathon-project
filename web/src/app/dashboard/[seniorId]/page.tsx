@@ -6,9 +6,10 @@ import { markAlertSeen } from "@/app/actions";
 import { BarChart, BloodPressureChart, HeartRateChart } from "@/components/charts";
 import { LiveUpdates } from "@/components/live-updates";
 import { CreateShareCode } from "@/components/share-code";
-import { getSeniorDashboard, localDate, type Alert, type MetricType, type SeniorDashboard, type Threshold } from "@/lib/data";
+import { getSeniorDashboard, localDate, type Alert, type LinkedSenior, type MetricType, type SeniorDashboard, type Threshold } from "@/lib/data";
 import { ageFrom, formatDayTime, formatTime, minutesToHours, timeAgo, unitLabel, weekday } from "@/lib/format";
 import { getCurrentCaregiver } from "@/lib/session";
+import { buildSummaryInput, getDailySummary } from "@/lib/summary";
 
 export const metadata: Metadata = { title: "Daily chart: KinCare" };
 
@@ -144,7 +145,7 @@ function fmt(value: number, metric: MetricType) {
   return value.toFixed(decimals);
 }
 
-function Dashboard({ d }: { d: SeniorDashboard }) {
+function Dashboard({ d, summary }: { d: SeniorDashboard; summary: React.ReactNode }) {
   const tz = d.senior.timezone;
   const now = d.now;
   const age = ageFrom(d.senior.date_of_birth, new Date(now));
@@ -204,6 +205,8 @@ function Dashboard({ d }: { d: SeniorDashboard }) {
           {firstName} a call.
         </p>
       )}
+
+      {summary}
 
       {d.openAlerts.length > 0 ? (
         <section aria-labelledby="open-alerts">
@@ -330,6 +333,33 @@ function Dashboard({ d }: { d: SeniorDashboard }) {
   );
 }
 
+/**
+ * Written commentary on the week. Its own async component inside Suspense:
+ * generation takes a second or two on a cache miss, and the readings must not
+ * wait for prose. Renders nothing at all when unavailable -- no key, no data,
+ * or the API failed -- because this is commentary, not the point of the page.
+ */
+async function DailySummary({ senior }: { senior: LinkedSenior }) {
+  const age = ageFrom(senior.date_of_birth);
+  const summary = await getDailySummary(senior.id, senior.timezone, () =>
+    buildSummaryInput(senior.id, senior.timezone, senior.full_name.split(" ")[0]!, age),
+  );
+  if (!summary) return null;
+
+  return (
+    <section
+      aria-label="This week in plain language"
+      className="rounded-2xl border-2 border-line bg-lavender-tint px-5 py-5 sm:px-6"
+    >
+      <p className="text-lg leading-relaxed">{summary}</p>
+      <p className="mt-3 text-sm text-ink-soft">
+        Written from this week's readings. It describes what the numbers show — it isn't
+        medical advice.
+      </p>
+    </section>
+  );
+}
+
 async function SeniorDashboard({ params }: { params: Promise<{ seniorId: string }> }) {
   const [{ seniorId }, caregiver] = await Promise.all([params, getCurrentCaregiver()]);
   const data = await getSeniorDashboard(caregiver.id, seniorId);
@@ -337,7 +367,16 @@ async function SeniorDashboard({ params }: { params: Promise<{ seniorId: string 
   return (
     <>
       <LiveUpdates seniorId={seniorId} />
-      <Dashboard d={data} />
+      <Dashboard
+        d={data}
+        // Nested Suspense: the readings stream immediately, the written
+        // summary fills in a second or two later on a cache miss.
+        summary={
+          <Suspense fallback={null}>
+            <DailySummary senior={data.senior} />
+          </Suspense>
+        }
+      />
     </>
   );
 }

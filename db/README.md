@@ -21,7 +21,7 @@ docker cp .\db my-postgres:/tmp/db
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
            "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
-           "012_eastern_time","013_height_metric","014_stale_data_alerts")
+           "012_eastern_time","013_height_metric","014_stale_data_alerts","015_daily_summaries")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -43,7 +43,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 14 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 15 migrations applied
 and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -92,6 +92,7 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/012_eastern_time.sql` | Database shows times in Eastern Time (EDT/EST) instead of UTC; stored instants unchanged |
 | `migrations/013_height_metric.sql` | `height` added to the `metric_type` enum |
 | `migrations/014_stale_data_alerts.sql` | no_data alerts + hourly pg_cron check |
+| `migrations/015_daily_summaries.sql` | Cached plain-language weekly summaries |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
@@ -329,6 +330,34 @@ available. Deny-all plus a trusted server-side key is the correct shape here. If
 later want the browser to query Supabase directly, that means wiring Auth0 JWTs into
 Supabase's custom-JWT setting and writing real policies — a deliberate project, not a
 config toggle.
+
+### Never sum a metric across data sources
+
+A senior can have several `data_sources` — a phone, a watch, an old pairing
+that was never revoked. **Each one reports the same person's whole day.**
+Summing them double-counts.
+
+Total *within* a source, then take the largest:
+
+```sql
+SELECT day, max(source_total) FROM (
+  SELECT day, data_source_id, sum(value) AS source_total
+  FROM measurements ... GROUP BY 1, 2
+) per_source GROUP BY day
+```
+
+A phone saying 5,000 steps and a watch saying 4,800 means about 5,000 steps
+walked, not 9,800. This bit three places before it was noticed, all with the
+same root cause:
+
+- daily step totals read 19,143 instead of 5,388
+- a night's sleep read 2,940 minutes — 49 hours
+- the blood-pressure chart logged "two children with the same key", because
+  two sources recorded a reading at the same instant and the chart keys on
+  `recorded_at`
+
+Sleep and blood pressure are deduplicated rather than summed: one night is
+one night, and one instant is one reading.
 
 ### Silence is a signal
 

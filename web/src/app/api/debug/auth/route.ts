@@ -40,6 +40,7 @@ function configPresence() {
     "AUTH0_SECRET",
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "GEMINI_API_KEY",
   ];
   return Object.fromEntries(names.map((n) => [n, Boolean(process.env[n])]));
 }
