@@ -100,10 +100,13 @@ async function callModel(model: string, prompt: string, key: string): Promise<st
         // Low but not zero: deterministic enough to be consistent between
         // siblings reading the same day, varied enough not to read like a form.
         temperature: 0.3,
-        // Generous for a 60-word paragraph because Gemini 3.x spends output
-        // budget on internal reasoning first. At 200 the visible answer was
-        // cut off mid-sentence after about 90 characters.
-        maxOutputTokens: 2000,
+        // Far more than a 60-word paragraph needs, because Gemini 3.x spends
+        // output budget on internal reasoning first. Measured against the real
+        // prompt: ~1,500-1,900 thinking tokens for a ~100 token answer. At 200
+        // the answer was cut off after 90 characters; at 2,000 it still hit
+        // MAX_TOKENS. An unused cap costs nothing -- only generated tokens are
+        // billed -- so the headroom is free insurance against a longer week.
+        maxOutputTokens: 6000,
       },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
