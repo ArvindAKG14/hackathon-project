@@ -24,8 +24,8 @@
         <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
-    <!-- Cleartext allowed so a local backend (http://10.0.2.2:4000 on the emulator)
-         works too; the tunnel URL is https anyway. -->
+    <!-- Cleartext allowed so a local backend (http://10.0.2.2:3000 on the emulator)
+         works too; a deployed URL is https anyway. -->
     <application
         android:allowBackup="false"
         android:label="KinCare Sync"

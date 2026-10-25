@@ -14,6 +14,7 @@
   --marigold-tint: #fbefd9;
   --rose: #b8434b;
   --rose-tint: #f7e1e2;
+  --lavender-tint: #ece6f7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +32,7 @@
     --marigold-tint: #3a2f1c;
     --rose: #e07a80;
     --rose-tint: #3d2427;
+    --lavender-tint: #2c2640;
   }
 }
 
@@ -48,6 +50,7 @@
   --color-marigold-tint: var(--marigold-tint);
   --color-rose: var(--rose);
   --color-rose-tint: var(--rose-tint);
+  --color-lavender-tint: var(--lavender-tint);
   --font-sans: var(--font-atkinson);
 }
 

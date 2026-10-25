@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { Logo } from "@/components/logo";
 import { getCurrentCaregiver } from "@/lib/session";
@@ -24,9 +25,18 @@ export default function DashboardLayout({ children }: LayoutProps<"/dashboard">)
       <header className="border-b border-line bg-surface">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-8">
           <Logo />
-          <Suspense>
-            <UserMenu />
-          </Suspense>
+          <div className="flex items-center gap-4">
+            <Suspense>
+              <UserMenu />
+            </Suspense>
+            {/* Not tied to the caregiver, so it renders for any signed-in user */}
+            <Link
+              href="/dashboard/add-member"
+              className="rounded-full bg-care px-4 py-1.5 font-bold text-on-care hover:bg-care-strong"
+            >
+              Add Member
+            </Link>
+          </div>
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-8 sm:px-8">{children}</main>

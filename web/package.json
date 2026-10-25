@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "mock:push": "node scripts/mock-push.mts"
+    "mock:push": "node scripts/mock-push.mts",
+    "gen:timezones": "node scripts/generate-time-zones.mts"
   },
   "dependencies": {
     "@auth0/nextjs-auth0": "^4.33.0",

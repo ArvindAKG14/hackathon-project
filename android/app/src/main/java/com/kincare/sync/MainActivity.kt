@@ -137,7 +137,6 @@ private fun SyncScreen() {
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
                 label = { Text("Backend address") },
-                placeholder = { Text("https://….trycloudflare.com") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth(),
