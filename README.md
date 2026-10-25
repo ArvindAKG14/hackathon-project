@@ -7,24 +7,24 @@ calling every day. The parent wears their watch as usual; their phone sends the
 readings to KinCare, and the whole family sees them on one calm page, with an
 alert when something needs a closer look.
 
-Live site: https://hackathon-project-six-murex.vercel.app
+Live site:[ https://hackathon-project-six-murex.vercel.app](https://www.kin-care.health/)
 
 ## What it does
 
-- **Today at a glance.** Heart rate, blood oxygen, blood pressure, temperature,
+- **Today it tracks** heart rate, blood oxygen, blood pressure, temperature,
   blood glucose, weight, steps and last night's sleep, each marked against the
   parent's own safe range.
-- **Trends.** Heart rate over the last 24 hours, plus steps, sleep and blood
+- **Trends** Heart rate over the last 24 hours, steps, sleep and blood
   pressure over the last week.
-- **Alerts.** A reading outside the safe range is flagged straight away, and so
-  is silence: if the watch stops sending, KinCare says so instead of assuming
+- **Alerts** A reading above the safe range is flagged straight away, and so
+  is a reading under. if the data stops coming, KinCare says so instead of assuming
   all is well. Whoever sees an alert first marks it as seen, so the rest of
   the family knows it's handled.
 - **A weekly summary in plain words**, such as "she slept less than usual and
-  her oxygen dipped twice on Tuesday", for anyone who can't read a chart.
-- **Live updates.** The page refreshes by itself as new readings arrive.
+  her oxygen dipped twice on Tuesday", for anyone who'd rather not read a chart.
+- **Live updates** The page refreshes by itself as new readings arrive.
 - **Built for the family.** One person sets up the parent's profile, then
-  shares a short code like `K7M2-9QX4` that brothers and sisters can read out
+  shares a short code like `XXXX-XXXX` that brothers and sisters can read out
   over the phone. The parent never needs an account or a password.
 
 ## How it works
@@ -34,7 +34,8 @@ Live site: https://hackathon-project-six-murex.vercel.app
    accepts Apple Health data, ready for an iPhone app.
 2. **The readings are stored** in a Supabase (Postgres) database. Only family
    members who've been given a share code can see a parent's data.
-3. **The website charts them** and raises alerts.
+3. **The website charts them** and raises alerts. This lets the children follow
+   their loved one's health from anywhere in the world. Because nothing is more important than family
 
 ## What's in this repo
 
