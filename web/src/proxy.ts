@@ -13,5 +13,5 @@ export async function proxy(request: NextRequest) {
 // /api/devices/* authenticates with device tokens, not Auth0.
 // Add a route here if it starts calling auth0.getSession().
 export const config = {
-  matcher: ["/auth/:path*", "/login", "/dashboard/:path*", "/api/seniors/:path*"],
+  matcher: ["/auth/:path*", "/login", "/dashboard/:path*", "/api/seniors/:path*", "/api/debug/:path*"],
 };
