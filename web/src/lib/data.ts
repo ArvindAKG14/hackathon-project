@@ -194,7 +194,9 @@ export async function getSeniorDashboard(
     (sources.data ?? [])
       .map((s) => s.last_sync_at as string | null)
       .filter((s): s is string => !!s)
-      .sort()
+      // By instant, not as text: the database answers in Eastern time, and
+      // "-04:00" and "-05:00" strings don't sort chronologically across a DST change.
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
       .at(-1) ?? null;
 
   const latestByMetric: SeniorDashboard["latest"] = {};

@@ -20,7 +20,8 @@ docker cp .\db my-postgres:/tmp/db
 # Migrations, in order
 $files = @("001_extensions_and_enums","002_users_and_links","003_data_sources",
            "004_measurements","005_sleep_and_blood_pressure","006_alerts","007_views",
-           "008_rls","009_device_pairing","010_rls_policies","011_care_team_views")
+           "008_rls","009_device_pairing","010_rls_policies","011_care_team_views",
+           "012_eastern_time")
 foreach ($f in $files) {
   docker exec my-postgres psql -U postgres -d health_monitor -v ON_ERROR_STOP=1 -q -f "/tmp/db/migrations/$f.sql"
 }
@@ -42,7 +43,7 @@ Connection string for local work: `postgresql://postgres@localhost:5432/health_m
 
 ### Supabase
 
-Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 11 migrations applied
+Project `ofuiulitkslywrxcbrmv` is **already provisioned** — all 12 migrations applied
 and seeded (`seed.sql` and `seed_more.sql`) against PostgreSQL 17.11. You only need this section to re-apply from
 scratch.
 
@@ -88,6 +89,7 @@ Neon, Railway, or any PostgreSQL 15+.
 | `migrations/009_device_pairing.sql` | Device tokens and pairing codes |
 | `migrations/010_rls_policies.sql` | Per-user RLS policies + Realtime publication |
 | `migrations/011_care_team_views.sql` | `senior_caregivers` and `caregiver_seniors` views: who looks after whom |
+| `migrations/012_eastern_time.sql` | Database shows times in Eastern Time (EDT/EST) instead of UTC; stored instants unchanged |
 | `seed.sql` | 7 days of mock data. Idempotent — truncates first, safe to re-run |
 | `seed_more.sql` | A second senior and more share codes. Truncates nothing, so safe on a live database |
 | `verify.sql` | 12 checks: dashboard queries, idempotency, index usage, constraints |
