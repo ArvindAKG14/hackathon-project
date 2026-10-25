@@ -1,5 +1,6 @@
 import "server-only";
 import { Pool } from "pg";
+import { ConfigError } from "./config-error";
 
 // Direct Postgres access, used only by the ingest path.
 //
@@ -20,7 +21,10 @@ export function pg(): Pool {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error("DATABASE_URL must be set in .env.local for device ingest");
+    throw new ConfigError(
+      ["DATABASE_URL"],
+      "Use Supabase's session pooler (:5432) locally and the transaction pooler (:6543) on Vercel.",
+    );
   }
 
   pool = new Pool({
