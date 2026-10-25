@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useActionState, useState, type ReactNode } from "react";
+import { addCareRecipient, type AddRecipientState } from "@/app/actions";
 import { COMMON_TIME_ZONES, OTHER_TIME_ZONES } from "@/lib/time-zones";
 
 // Everything a caregiver types in when adding a care recipient. The fields
 // follow the tables a new senior needs: users (profile), caregiver_links
-// (relationship) and alert_thresholds (safe ranges). Not wired to the
-// backend yet: submitting only checks the required fields.
+// (relationship), measurements (starting weight and height) and
+// alert_thresholds (safe ranges). addCareRecipient writes all of them in one
+// transaction and redirects to the new senior's dashboard.
 
 // Stored as the caregiver's relation to the senior, lowercase, as in db/seed.sql.
 const RELATIONSHIPS = [
@@ -74,19 +76,15 @@ function Group({ title, note, children }: { title: string; note?: string; childr
   );
 }
 
+const INITIAL: AddRecipientState = { status: "idle", message: "" };
+
 export function CareRecipientForm() {
-  const [submitted, setSubmitted] = useState(false);
+  const [state, action, pending] = useActionState(addCareRecipient, INITIAL);
   const [weightUnit, setWeightUnit] = useState<"kg" | "lb">("kg");
   const [heightUnit, setHeightUnit] = useState<"cm" | "ft_in">("cm");
 
   return (
-    <form
-      className="flex flex-col gap-8"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setSubmitted(true);
-      }}
-    >
+    <form action={action} className="flex flex-col gap-8">
       <Group title="About them">
         <Field label="Full name" required>
           <input name="full_name" type="text" required autoComplete="off" className={input} />
@@ -235,13 +233,14 @@ export function CareRecipientForm() {
       <div className="flex flex-col gap-3">
         <button
           type="submit"
-          className="self-start rounded-full bg-care px-7 py-3.5 text-lg font-bold text-on-care hover:bg-care-strong"
+          disabled={pending}
+          className="self-start rounded-full bg-care px-7 py-3.5 text-lg font-bold text-on-care hover:bg-care-strong disabled:opacity-60"
         >
-          Add care recipient
+          {pending ? "Adding…" : "Add care recipient"}
         </button>
-        {submitted && (
-          <p role="status" className="rounded-2xl bg-marigold-tint px-5 py-4 text-lg">
-            Nothing was saved: this form isn&apos;t connected yet.
+        {state.status === "error" && (
+          <p role="alert" className="rounded-2xl bg-rose-tint px-5 py-4 text-lg font-bold text-rose">
+            {state.message}
           </p>
         )}
       </div>
