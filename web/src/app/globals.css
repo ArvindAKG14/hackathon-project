@@ -88,11 +88,96 @@ body {
   animation-delay: calc(var(--i) * 70ms + 200ms);
 }
 
+/*
+ * Check-in orb. Not driven by audio: the motion only says whose turn it is.
+ * Speaking: the core wobbles on an uneven beat and three rings swell at
+ * different speeds, so it reads as a voice rather than a metronome.
+ * Listening: a slow, light pulse with one ripple.
+ */
+.orb {
+  position: relative;
+  /* vh too, so Finish stays on screen on short phones held sideways */
+  width: min(60vw, 32vh, 15rem);
+  aspect-ratio: 1;
+}
+
+.orb-core,
+.orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+}
+
+.orb-core {
+  background: radial-gradient(circle at 35% 30%, var(--care-strong), var(--care) 55%, var(--care) 100%);
+  box-shadow: 0 18px 50px -18px var(--care);
+  transition: transform 300ms ease, opacity 300ms ease;
+}
+
+.orb-ring {
+  background: var(--care);
+  opacity: 0;
+}
+
+@keyframes orb-talk {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.07); }
+  27% { transform: scale(0.97); }
+  41% { transform: scale(1.1); }
+  55% { transform: scale(1.01); }
+  68% { transform: scale(1.06); }
+  82% { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+
+@keyframes orb-swell {
+  from { transform: scale(1); opacity: 0.32; }
+  to { transform: scale(var(--to, 1.25)); opacity: 0.08; }
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes orb-ripple {
+  from { transform: scale(1); opacity: 0.2; }
+  to { transform: scale(1.35); opacity: 0; }
+}
+
+@keyframes orb-think {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.orb[data-state="speaking"] .orb-core {
+  animation: orb-talk 1.15s ease-in-out infinite;
+}
+.orb[data-state="speaking"] .orb-ring {
+  animation: orb-swell var(--speed) ease-in-out infinite alternate;
+}
+.orb[data-state="listening"] .orb-core {
+  animation: orb-breathe 2.4s ease-in-out infinite;
+}
+.orb[data-state="listening"] .orb-ring:first-child {
+  animation: orb-ripple 2.4s ease-out infinite;
+}
+.orb[data-state="thinking"] .orb-core {
+  animation: orb-think 1.4s ease-in-out infinite;
+}
+.orb[data-state="idle"] .orb-core {
+  transform: scale(0.94);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
   }
   .pill-dot {
     animation: none;
+  }
+  .orb .orb-core,
+  .orb .orb-ring {
+    animation: none !important;
   }
 }

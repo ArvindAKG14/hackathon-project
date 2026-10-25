@@ -37,7 +37,7 @@ export type LinkedSenior = {
   relationship: string | null;
 };
 
-export type AlertKind = "threshold" | "no_data";
+export type AlertKind = "threshold" | "no_data" | "check_in";
 
 export type Alert = {
   id: number;
