@@ -16,8 +16,13 @@ import { pg } from "./pg";
 // one path that has to be fast, fails when the API does, and could soften a
 // warning. Alerts stay templated.
 
-const MODEL = "gemini-2.5-flash";
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// Tried in order. Flash models get overloaded on the free tier and answer
+// 503, which is transient -- without a fallback that would mean no summary
+// for the whole day, since the result is cached per day. Newest first so we
+// use the best available and only drop down when it is busy.
+const MODELS = ["gemini-3.8-flash", "gemini-3.5-flash"] as const;
+const endpointFor = (model: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 /** The table's CHECK rejects anything longer; fail before writing, not after. */
 const MAX_CHARS = 2000;
 const TIMEOUT_MS = 20_000;
@@ -42,6 +47,7 @@ Rules, all of them strict:
 - Never suggest treatment, medication, or that anything is or isn't serious.
 - If something looks unusual, say what changed and suggest speaking to their doctor. Nothing more.
 - Only use the figures given. Never invent a reading, a trend, or a day that isn't listed.
+- Never reassure. Do not say a reading is fine, normal for them, nothing to worry about, or that rest is good for them. A drop in activity can mean illness, and comforting words could stop someone checking on a person who needs help.
 - If there isn't enough data to say anything useful, say exactly that in one sentence.
 - Lead with what changed from their own usual pattern, not with raw numbers.
 - Plain, warm, everyday language. No clinical terms, no bullet points, no headings.
@@ -76,17 +82,9 @@ function buildPrompt(input: SummaryInput): string {
   ].join("\n");
 }
 
-/** Calls Gemini. Throws on transport or API failure; the caller decides what that means. */
-async function generate(prompt: string): Promise<string> {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new ConfigError(
-      ["GEMINI_API_KEY"],
-      "Get one from Google AI Studio and set it server-side. Never prefix it with NEXT_PUBLIC_.",
-    );
-  }
-
-  const res = await fetch(`${ENDPOINT}?key=${key}`, {
+/** One attempt against one model. Throws so the caller can try the next. */
+async function callModel(model: string, prompt: string, key: string): Promise<string> {
+  const res = await fetch(`${endpointFor(model)}?key=${key}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -95,23 +93,66 @@ async function generate(prompt: string): Promise<string> {
         // Low but not zero: deterministic enough to be consistent between
         // siblings reading the same day, varied enough not to read like a form.
         temperature: 0.3,
-        maxOutputTokens: 200,
+        // Generous for a 60-word paragraph because Gemini 3.x spends output
+        // budget on internal reasoning first. At 200 the visible answer was
+        // cut off mid-sentence after about 90 characters.
+        maxOutputTokens: 2000,
       },
     }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
   if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    throw new Error(`${model} ${res.status}: ${(await res.text()).slice(0, 160)}`);
   }
 
   const body = await res.json();
-  const text: string | undefined = body?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text?.trim()) throw new Error("Gemini returned no text");
+  const candidate = body?.candidates?.[0];
 
-  const trimmed = text.trim();
-  if (trimmed.length > MAX_CHARS) throw new Error(`Gemini returned ${trimmed.length} chars; expected a paragraph`);
+  // A half-written sentence is worse than no summary: it reads like the app
+  // broke. Treat it as a failure so the next page load tries again rather
+  // than caching the fragment for the rest of the day.
+  if (candidate?.finishReason === "MAX_TOKENS") {
+    throw new Error(`${model} hit the token limit before finishing`);
+  }
+
+  // Gemini 3.x can return reasoning alongside the answer, flagged thought:true.
+  // Taking parts[0] blindly would sometimes surface its working-out.
+  const parts: { text?: string; thought?: boolean }[] = candidate?.content?.parts ?? [];
+  const text = parts
+    .filter((p) => !p.thought && typeof p.text === "string")
+    .map((p) => p.text)
+    .join("")
+    .trim();
+  if (!text) throw new Error(`${model} returned no text`);
+
+  const trimmed = text;
+  if (trimmed.length > MAX_CHARS) {
+    throw new Error(`${model} returned ${trimmed.length} chars; expected a paragraph`);
+  }
   return trimmed;
+}
+
+/** Calls Gemini, falling through the model list. Throws only if all fail. */
+async function generate(prompt: string): Promise<{ text: string; model: string }> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new ConfigError(
+      ["GEMINI_API_KEY"],
+      "Get one from Google AI Studio and set it server-side. Never prefix it with NEXT_PUBLIC_.",
+    );
+  }
+
+  let last: unknown;
+  for (const model of MODELS) {
+    try {
+      return { text: await callModel(model, prompt, key), model };
+    } catch (error) {
+      last = error;
+      console.warn("[summary]", error instanceof Error ? error.message : error);
+    }
+  }
+  throw last instanceof Error ? last : new Error("All Gemini models failed");
 }
 
 /**
@@ -258,7 +299,7 @@ export async function getDailySummary(
       return null;
     }
 
-    const summary = await generate(buildPrompt(input));
+    const { text: summary, model } = await generate(buildPrompt(input));
 
     // ON CONFLICT DO NOTHING: two caregivers can open the page at once, and
     // whichever request lands first wins. Both then read the same words.
@@ -266,7 +307,7 @@ export async function getDailySummary(
       `INSERT INTO senior_summaries (senior_id, local_date, summary, model)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (senior_id, local_date) DO NOTHING`,
-      [seniorId, today, summary, MODEL],
+      [seniorId, today, summary, model],
     );
 
     return summary;
