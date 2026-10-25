@@ -357,16 +357,15 @@ function Conversation({
               {emergency === "self_harm" ? "You don't have to go through this alone." : "This may need help right away."}
             </p>
             <p className="mt-1 text-lg">Your family has been sent an alert.</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              {emergency === "self_harm" && (
-                <a href="tel:988" className="rounded-full bg-rose px-6 py-3 text-lg font-bold text-surface">
-                  Call or text 988
-                </a>
-              )}
-              <a href="tel:911" className="rounded-full bg-rose px-6 py-3 text-lg font-bold text-surface">
-                Call 911
-              </a>
-            </div>
+            {/*
+              Demo build: deliberately no tel: links, so nothing here can dial
+              emergency services. A real deployment would put "Call 911" (and
+              "Call or text 988" for self-harm) buttons back here.
+            */}
+            <p className="mt-3 text-lg">
+              In a real emergency, call {emergency === "self_harm" ? "or text 988, or call 911" : "911"}.
+            </p>
+            <p className="mt-1 text-sm text-ink-soft">This is a demo, so calling from KinCare is turned off.</p>
           </div>
         )}
 
